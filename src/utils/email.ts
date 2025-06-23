@@ -10,20 +10,20 @@ class EmailService {
     private transporter: nodemailer.Transporter;
 
     constructor() {
-        this.transporter = nodemailer.createTransporter({
-            host: process.env.EMAIL_HOST,
-            port: parseInt(process.env.EMAIL_PORT || '587'),
+        this.transporter = nodemailer.createTransport({
+            host: (process.env as any).EMAIL_HOST,
+            port: parseInt((process.env as any).EMAIL_PORT || '587'),
             secure: false, // true for 465, false for other ports
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
+                user: (process.env as any).EMAIL_USER,
+                pass: (process.env as any).EMAIL_PASS,
             },
         });
     }
 
     async sendEmail(options: EmailOptions): Promise<void> {
         const mailOptions = {
-            from: process.env.EMAIL_FROM,
+            from: (process.env as any).EMAIL_FROM,
             to: options.to,
             subject: options.subject,
             html: options.html,
@@ -33,7 +33,7 @@ class EmailService {
     }
 
     async sendVerificationEmail(email: string, token: string): Promise<void> {
-        const verificationUrl = `${process.env.APP_URL}/api/auth/verify-email?token=${token}`;
+        const verificationUrl = `${(process.env as any).APP_URL}/api/auth/verify-email?token=${token}`;
 
         const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -58,7 +58,7 @@ class EmailService {
     }
 
     async sendPasswordResetEmail(email: string, token: string): Promise<void> {
-        const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
+        const resetUrl = `${(process.env as any).CLIENT_URL}/reset-password?token=${token}`;
 
         const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

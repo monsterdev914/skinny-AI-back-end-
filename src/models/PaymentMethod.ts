@@ -1,7 +1,7 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 import { IPaymentMethod } from '../types';
 
-export interface PaymentMethodDocument extends IPaymentMethod, Document { }
+export interface PaymentMethodDocument extends IPaymentMethod { }
 
 const addressSchema = new Schema({
     line1: String,
@@ -59,7 +59,7 @@ paymentMethodSchema.index({ userId: 1, isDefault: 1 });
 // Pre-save middleware to ensure only one default payment method per user
 paymentMethodSchema.pre('save', async function (next) {
     if (this.isDefault) {
-        await this.constructor.updateMany(
+        await this.model('PaymentMethod').updateMany(
             { userId: this.userId, _id: { $ne: this._id } },
             { isDefault: false }
         );
@@ -84,8 +84,8 @@ paymentMethodSchema.virtual('formattedExpiration').get(function () {
 });
 
 // Method to check if payment method is expired
-paymentMethodSchema.methods.isExpired = function (): boolean {
-    if (!this.card || !this.card.expMonth || !this.card.expYear) {
+(paymentMethodSchema.methods as any).isExpired = function (): boolean {
+    if (!(this as any).card || !(this as any).card.expMonth || !(this as any).card.expYear) {
         return false;
     }
 
@@ -93,24 +93,24 @@ paymentMethodSchema.methods.isExpired = function (): boolean {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1; // getMonth() returns 0-11
 
-    if (this.card.expYear < currentYear) return true;
-    if (this.card.expYear === currentYear && this.card.expMonth < currentMonth) return true;
+    if ((this as any).card.expYear < currentYear) return true;
+    if ((this as any).card.expYear === currentYear && (this as any).card.expMonth < currentMonth) return true;
 
     return false;
 };
 
 // Static method to find default payment method for user
-paymentMethodSchema.statics.findDefaultByUserId = function (userId: string) {
+(paymentMethodSchema.statics as any).findDefaultByUserId = function (userId: string) {
     return this.findOne({ userId, isDefault: true });
 };
 
 // Static method to find all payment methods for user
-paymentMethodSchema.statics.findByUserId = function (userId: string) {
+(paymentMethodSchema.statics as any).findByUserId = function (userId: string) {
     return this.find({ userId }).sort({ isDefault: -1, createdAt: -1 });
 };
 
 // Static method to find payment method by Stripe ID
-paymentMethodSchema.statics.findByStripeId = function (stripePaymentMethodId: string) {
+(paymentMethodSchema.statics as any).findByStripeId = function (stripePaymentMethodId: string) {
     return this.findOne({ stripePaymentMethodId });
 };
 

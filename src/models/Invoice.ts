@@ -1,7 +1,7 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 import { IInvoice } from '../types';
 
-export interface InvoiceDocument extends IInvoice, Document { }
+export interface InvoiceDocument extends IInvoice { }
 
 const invoiceSchema = new Schema<InvoiceDocument>({
     userId: {
@@ -124,24 +124,24 @@ invoiceSchema.virtual('daysUntilDue').get(function () {
 });
 
 // Method to check if invoice is paid
-invoiceSchema.methods.isPaid = function (): boolean {
-    return this.paid || this.status === 'paid';
+(invoiceSchema.methods as any).isPaid = function (): boolean {
+    return (this as any).paid || (this as any).status === 'paid';
 };
 
 // Method to check if invoice is overdue
-invoiceSchema.methods.isOverdue = function (): boolean {
-    if (this.isPaid()) return false;
-    if (!this.dueDate) return false;
-    return new Date() > this.dueDate;
+(invoiceSchema.methods as any).isOverdue = function (): boolean {
+    if ((this as any).isPaid()) return false;
+    if (!(this as any).dueDate) return false;
+    return new Date() > (this as any).dueDate;
 };
 
 // Method to get outstanding amount
-invoiceSchema.methods.getOutstandingAmount = function (): number {
-    return this.amountDue - this.amountPaid;
+(invoiceSchema.methods as any).getOutstandingAmount = function (): number {
+    return (this as any).amountDue - (this as any).amountPaid;
 };
 
 // Static method to find invoices for a user
-invoiceSchema.statics.findByUserId = function (userId: string, options: any = {}) {
+(invoiceSchema.statics as any).findByUserId = function (userId: string, options: any = {}) {
     const query = this.find({ userId });
 
     if (options.status) {
@@ -156,7 +156,7 @@ invoiceSchema.statics.findByUserId = function (userId: string, options: any = {}
 };
 
 // Static method to find unpaid invoices
-invoiceSchema.statics.findUnpaid = function () {
+(invoiceSchema.statics as any).findUnpaid = function () {
     return this.find({
         $or: [
             { paid: false },
@@ -166,7 +166,7 @@ invoiceSchema.statics.findUnpaid = function () {
 };
 
 // Static method to find overdue invoices
-invoiceSchema.statics.findOverdue = function () {
+(invoiceSchema.statics as any).findOverdue = function () {
     const now = new Date();
     return this.find({
         dueDate: { $lt: now },
@@ -176,7 +176,7 @@ invoiceSchema.statics.findOverdue = function () {
 };
 
 // Static method to find invoice by Stripe ID
-invoiceSchema.statics.findByStripeId = function (stripeInvoiceId: string) {
+(invoiceSchema.statics as any).findByStripeId = function (stripeInvoiceId: string) {
     return this.findOne({ stripeInvoiceId }).populate('userId subscriptionId');
 };
 

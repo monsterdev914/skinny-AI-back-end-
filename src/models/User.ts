@@ -1,12 +1,18 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { IUser } from '../types';
 
-export interface UserDocument extends IUser, Document {
+export interface UserDocument extends IUser {
     comparePassword(candidatePassword: string): Promise<boolean>;
     generateVerificationToken(): string;
     generatePasswordResetToken(): string;
+}
+
+interface UserModel extends mongoose.Model<UserDocument> {
+    findByEmail(email: string): Promise<UserDocument | null>;
+    findByVerificationToken(token: string): Promise<UserDocument | null>;
+    findByResetPasswordToken(token: string): Promise<UserDocument | null>;
 }
 
 const userSchema = new Schema<UserDocument>({
@@ -23,6 +29,10 @@ const userSchema = new Schema<UserDocument>({
         required: true
     },
     avatar: {
+        type: String,
+        default: null
+    },
+    avatarPath: {
         type: String,
         default: null
     },
@@ -80,11 +90,11 @@ const userSchema = new Schema<UserDocument>({
 }, {
     timestamps: true,
     toJSON: {
-        transform: function (doc, ret) {
-            delete ret.passwordHash;
-            delete ret.verificationToken;
-            delete ret.resetPasswordToken;
-            delete ret.resetPasswordExpires;
+        transform: function (_doc, ret) {
+            delete (ret as any).passwordHash;
+            delete (ret as any).verificationToken;
+            delete (ret as any).resetPasswordToken;
+            delete (ret as any).resetPasswordExpires;
             return ret;
         }
     }
@@ -99,8 +109,8 @@ userSchema.pre('save', async function (next) {
     if (!this.isModified('passwordHash')) return next();
 
     try {
-        const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_ROUNDS || '12'));
-        this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
+        const salt = await bcrypt.genSalt(parseInt((process.env as any).BCRYPT_ROUNDS || '12'));
+        (this as any).passwordHash = await bcrypt.hash((this as any).passwordHash, salt);
         next();
     } catch (error) {
         next(error as Error);
@@ -108,41 +118,41 @@ userSchema.pre('save', async function (next) {
 });
 
 // Method to compare password
-userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
-    return bcrypt.compare(candidatePassword, this.passwordHash);
+(userSchema.methods as any).comparePassword = async function (candidatePassword: string): Promise<boolean> {
+    return bcrypt.compare(candidatePassword, (this as any).passwordHash);
 };
 
 // Method to generate verification token
-userSchema.methods.generateVerificationToken = function (): string {
+(userSchema.methods as any).generateVerificationToken = function (): string {
     const token = crypto.randomBytes(32).toString('hex');
-    this.verificationToken = token;
+    (this as any).verificationToken = token;
     return token;
 };
 
 // Method to generate password reset token
-userSchema.methods.generatePasswordResetToken = function (): string {
+(userSchema.methods as any).generatePasswordResetToken = function (): string {
     const token = crypto.randomBytes(32).toString('hex');
-    this.resetPasswordToken = token;
-    this.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    (this as any).resetPasswordToken = token;
+    (this as any).resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     return token;
 };
 
 // Static method to find user by email
-userSchema.statics.findByEmail = function (email: string) {
+(userSchema.statics as any).findByEmail = function (email: string) {
     return this.findOne({ email: email.toLowerCase() });
 };
 
 // Static method to find user by verification token
-userSchema.statics.findByVerificationToken = function (token: string) {
+(userSchema.statics as any).findByVerificationToken = function (token: string) {
     return this.findOne({ verificationToken: token });
 };
 
 // Static method to find user by reset password token
-userSchema.statics.findByResetPasswordToken = function (token: string) {
+(userSchema.statics as any).findByResetPasswordToken = function (token: string) {
     return this.findOne({
         resetPasswordToken: token,
         resetPasswordExpires: { $gt: Date.now() }
     });
 };
 
-export const User = mongoose.model<UserDocument>('User', userSchema); 
+export const User = mongoose.model<UserDocument, UserModel>('User', userSchema); 

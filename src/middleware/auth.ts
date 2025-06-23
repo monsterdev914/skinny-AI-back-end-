@@ -1,11 +1,11 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { AuthenticatedRequest, JWTPayload, AppError } from '../types';
 
 export const authenticateToken = async (
     req: AuthenticatedRequest,
-    res: Response,
+    _res: Response,
     next: NextFunction
 ): Promise<void> => {
     try {
@@ -19,7 +19,7 @@ export const authenticateToken = async (
             throw error;
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
+        const decoded = jwt.verify(token, (process.env as any)['JWT_SECRET']!) as JWTPayload;
 
         const user = await User.findById(decoded.userId).select('-passwordHash');
         if (!user) {
@@ -49,7 +49,7 @@ export const authenticateToken = async (
 };
 
 export const requireRole = (roles: string[]) => {
-    return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
         if (!req.user) {
             const error = new Error('Authentication required') as AppError;
             error.statusCode = 401;
@@ -75,7 +75,7 @@ export const requireUser = requireRole(['user', 'admin']);
 
 export const optionalAuth = async (
     req: AuthenticatedRequest,
-    res: Response,
+    _res: Response,
     next: NextFunction
 ): Promise<void> => {
     try {
@@ -87,7 +87,7 @@ export const optionalAuth = async (
             return;
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
+        const decoded = jwt.verify(token, (process.env as any)['JWT_SECRET']!) as JWTPayload;
         const user = await User.findById(decoded.userId).select('-passwordHash');
 
         if (user) {

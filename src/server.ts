@@ -6,14 +6,9 @@ import compression from 'compression';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
 
-import authRoutes from './routes/auth';
-import userRoutes from './routes/users';
-import planRoutes from './routes/plans';
-import subscriptionRoutes from './routes/subscriptions';
-import paymentMethodRoutes from './routes/paymentMethods';
-import invoiceRoutes from './routes/invoices';
-import webhookRoutes from './routes/webhooks';
+import router from './routes/index';
 
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/errorHandler';
@@ -21,19 +16,25 @@ import { notFound } from './middleware/errorHandler';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = (process.env as any)['PORT'] || 3000;
 
 // Security middleware
 app.use(helmet());
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:3001',
-    credentials: true
+    origin: [
+        (process.env as any)['CLIENT_URL'] || 'http://localhost:5173',
+        'http://localhost:3000',
+        'http://localhost:5173'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // limit each IP to 100 requests per windowMs
+    windowMs: parseInt((process.env as any)['RATE_LIMIT_WINDOW_MS'] || '900000'), // 15 minutes
+    max: parseInt((process.env as any)['RATE_LIMIT_MAX_REQUESTS'] || '100'), // limit each IP to 100 requests per windowMs
     message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);
@@ -46,14 +47,36 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(compression());
 
 // Logging middleware
-if (process.env.NODE_ENV === 'development') {
+if ((process.env as any)['NODE_ENV'] === 'development') {
     app.use(morgan('dev'));
 } else {
     app.use(morgan('combined'));
 }
 
+// Static file serving for uploads with comprehensive CORS headers
+app.use('/uploads', (req, res, next) => {
+    // Set comprehensive CORS headers for static files
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Credentials', 'false');
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.header('Access-Control-Max-Age', '86400');
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+        return;
+    }
+    
+    next();
+}, express.static(path.join(process.cwd(), 'uploads')));
+
+
+
+
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
@@ -62,25 +85,19 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/plans', planRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/payment-methods', paymentMethodRoutes);
-app.use('/api/invoices', invoiceRoutes);
-app.use('/api/webhooks', webhookRoutes);
+app.use('/api', router);
 
 // Error handling middleware
 app.use(notFound);
 app.use(errorHandler);
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI!)
+mongoose.connect((process.env as any)['MONGODB_URI']!)
     .then(() => {
         console.log('Connected to MongoDB');
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
-            console.log(`Environment: ${process.env.NODE_ENV}`);
+            console.log(`Environment: ${(process.env as any)['NODE_ENV']}`);
         });
     })
     .catch((error) => {
@@ -89,20 +106,18 @@ mongoose.connect(process.env.MONGODB_URI!)
     });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('SIGTERM received, shutting down gracefully');
-    mongoose.connection.close(() => {
-        console.log('MongoDB connection closed');
-        process.exit(0);
-    });
+    await mongoose.connection.close();
+    console.log('MongoDB connection closed');
+    process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('SIGINT received, shutting down gracefully');
-    mongoose.connection.close(() => {
-        console.log('MongoDB connection closed');
-        process.exit(0);
-    });
+    await mongoose.connection.close();
+    console.log('MongoDB connection closed');
+    process.exit(0);
 });
 
 export default app; 

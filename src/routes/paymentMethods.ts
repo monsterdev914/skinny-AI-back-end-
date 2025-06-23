@@ -1,15 +1,11 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { PaymentMethodController } from '../controllers/paymentMethod';
 
 const router = Router();
 
 // Get user payment methods
-router.get('/', authenticateToken, (req, res) => {
-    res.json({
-        success: true,
-        message: 'Payment methods retrieved successfully',
-        data: { paymentMethods: [] }
-    });
-});
+router.get('/', authenticateToken, asyncHandler(PaymentMethodController.getUserPaymentMethods));
 
 export default router; 

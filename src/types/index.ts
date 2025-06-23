@@ -13,15 +13,16 @@ export interface IUser extends BaseDocument {
     email: string;
     passwordHash: string;
     avatar?: string;
+    avatarPath?: string; // Path to uploaded avatar file
     firstName?: string;
     lastName?: string;
     birth?: Date;
     phoneNumber?: string;
     role: 'admin' | 'user';
     emailVerified: boolean;
-    verificationToken?: string;
-    resetPasswordToken?: string;
-    resetPasswordExpires?: Date;
+    verificationToken?: string | undefined;
+    resetPasswordToken?: string | undefined;
+    resetPasswordExpires?: Date | undefined;
     lastLogin?: Date;
     stripeCustomerId?: string;
     billing?: {
@@ -205,4 +206,7 @@ export interface AppError extends Error {
 export interface ValidationError {
     field: string;
     message: string;
-} 
+}
+
+// Export AI types
+export * from './ai'; 

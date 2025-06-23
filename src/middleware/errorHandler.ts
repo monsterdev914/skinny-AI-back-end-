@@ -3,9 +3,9 @@ import { AppError } from '../types';
 
 export const errorHandler = (
     error: Error | AppError,
-    req: Request,
+    _req: Request,
     res: Response,
-    next: NextFunction
+    _next: NextFunction
 ): void => {
     let statusCode = 500;
     let message = 'Internal Server Error';
@@ -32,18 +32,18 @@ export const errorHandler = (
     }
 
     // Log error in development
-    if (process.env.NODE_ENV === 'development') {
+    if ((process.env as any)['NODE_ENV'] === 'development') {
         console.error('Error:', error);
     }
 
     res.status(statusCode).json({
         success: false,
         message,
-        ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+        ...((process.env as any)['NODE_ENV'] === 'development' && { stack: error.stack })
     });
 };
 
-export const notFound = (req: Request, res: Response, next: NextFunction): void => {
+export const notFound = (req: Request, _res: Response, next: NextFunction): void => {
     const error = new Error(`Route ${req.originalUrl} not found`) as AppError;
     error.statusCode = 404;
     error.isOperational = true;

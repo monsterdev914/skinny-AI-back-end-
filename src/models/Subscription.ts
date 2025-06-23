@@ -1,7 +1,7 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 import { ISubscription } from '../types';
 
-export interface SubscriptionDocument extends ISubscription, Document { }
+export interface SubscriptionDocument extends ISubscription { }
 
 const subscriptionSchema = new Schema<SubscriptionDocument>({
     userId: {
@@ -80,44 +80,44 @@ subscriptionSchema.virtual('isCanceled').get(function () {
     return this.status === 'canceled' || this.cancelAtPeriodEnd;
 });
 
-// Method to check if subscription will expire soon (within 7 days)
-subscriptionSchema.methods.willExpireSoon = function (): boolean {
-    if (!this.currentPeriodEnd) return false;
+// Method to check if subscription will expire soon
+(subscriptionSchema.methods as any).willExpireSoon = function (): boolean {
+    if (!(this as any).currentPeriodEnd) return false;
     const sevenDaysFromNow = new Date();
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-    return this.currentPeriodEnd <= sevenDaysFromNow;
+    return (this as any).currentPeriodEnd <= sevenDaysFromNow;
 };
 
 // Method to get days until expiration
-subscriptionSchema.methods.getDaysUntilExpiration = function (): number | null {
-    if (!this.currentPeriodEnd) return null;
+(subscriptionSchema.methods as any).getDaysUntilExpiration = function (): number | null {
+    if (!(this as any).currentPeriodEnd) return null;
     const now = new Date();
-    const diffTime = this.currentPeriodEnd.getTime() - now.getTime();
+    const diffTime = (this as any).currentPeriodEnd.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
+    return diffDays;
 };
 
-// Static method to find active subscriptions for a user
-subscriptionSchema.statics.findActiveByUserId = function (userId: string) {
-    return this.findOne({
-        userId,
-        status: { $in: ['active', 'trialing'] }
+// Static method to find active subscription by user ID
+(subscriptionSchema.statics as any).findActiveByUserId = function (userId: string) {
+    return this.findOne({ 
+        userId, 
+        status: { $in: ['active', 'trialing'] } 
     }).populate('planId');
 };
 
 // Static method to find subscription by Stripe ID
-subscriptionSchema.statics.findByStripeId = function (stripeSubscriptionId: string) {
-    return this.findOne({ stripeSubscriptionId }).populate('planId');
+(subscriptionSchema.statics as any).findByStripeId = function (stripeSubscriptionId: string) {
+    return this.findOne({ stripeSubscriptionId }).populate('userId planId');
 };
 
-// Static method to find subscriptions that will expire soon
-subscriptionSchema.statics.findExpiringSoon = function (days: number = 7) {
-    const date = new Date();
-    date.setDate(date.getDate() + days);
-
+// Static method to find subscriptions expiring soon
+(subscriptionSchema.statics as any).findExpiringSoon = function (days: number = 7) {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + days);
     return this.find({
+        currentPeriodEnd: { $lte: futureDate, $gte: new Date() },
         status: { $in: ['active', 'trialing'] },
-        currentPeriodEnd: { $lte: date }
+        cancelAtPeriodEnd: false
     }).populate('userId planId');
 };
 
