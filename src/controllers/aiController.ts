@@ -5,6 +5,66 @@ import { getRelativePath, getFileUrl } from '../middleware/fileUpload';
 import fs from 'fs';
 
 export class AIController {
+    // Detect age from uploaded image
+    static async detectAge(req: Request, res: Response) {
+        try {
+            // Check if image file is provided (using multer middleware)
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please upload an image file'
+                });
+            }
+
+            // Validate file type
+            if (!req.file.mimetype.startsWith('image/')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please upload a valid image file'
+                });
+            }
+
+            // Validate file size (10MB limit)
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            if (req.file.size > maxSize) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Image file too large. Maximum size is 10MB'
+                });
+            }
+
+            // Read the saved file for analysis
+            const imageBuffer = fs.readFileSync(req.file.path);
+            
+            // Detect age from the image
+            const result = await FaceAnalysisService.detectAgeFromImage(imageBuffer);
+
+            if (!result.success) {
+                return res.status(500).json({
+                    success: false,
+                    message: result.message
+                });
+            }
+
+            return res.json({
+                success: true,
+                message: 'Age detection completed successfully',
+                data: {
+                    estimatedAge: result.estimatedAge,
+                    confidence: result.confidence,
+                    confidencePercentage: result.confidence ? Math.round(result.confidence * 100) : 0
+                }
+            });
+
+        } catch (error) {
+            console.error('Age detection controller error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Internal server error during age detection'
+            });
+        }
+    }
+
     // Analyze face condition from uploaded image
     static async analyzeFaceCondition(req: Request, res: Response) {
         try {
@@ -200,7 +260,7 @@ export class AIController {
         }
     }
 
-    // Comprehensive analysis: Face analysis + Treatment recommendation in one call
+    // Comprehensive analysis: Face analysis + Age detection + Treatment recommendation in one call
     static async getComprehensiveAnalysis(req: Request, res: Response) {
         try {
             // Check if image file is provided
@@ -228,40 +288,29 @@ export class AIController {
             }
 
             // Get optional user details from request body
-            const { userAge, skinType, currentProducts } = req.body;
+            const { skinType, currentProducts } = req.body || {};
             const userId = (req as any).user?.id; // Get user ID from auth middleware
 
             // Read the saved file for analysis
             const imageBuffer = fs.readFileSync(req.file.path);
             
-            // Step 1: Analyze face condition
-            const analysisResult = await FaceAnalysisService.analyzeFaceCondition(imageBuffer);
-
-            if (!analysisResult.success) {
-                return res.status(500).json({
-                    success: false,
-                    message: analysisResult.message
-                });
-            }
-
-            // Step 2: Generate treatment recommendation for top condition
-            const topCondition = analysisResult.topPrediction;
-            const treatmentResult = await FaceAnalysisService.generateTreatmentRecommendation(
-                topCondition.condition,
-                topCondition.confidence,
-                userAge,
+            // OPTIMIZED: Single comprehensive analysis call instead of multiple separate calls
+            console.log('Starting optimized comprehensive analysis...');
+            const result = await FaceAnalysisService.getComprehensiveAnalysisOptimized(
+                imageBuffer,
+                undefined, // No age parameter needed
                 skinType,
                 currentProducts
             );
 
-            if (!treatmentResult.success) {
+            if (!result.success) {
                 return res.status(500).json({
                     success: false,
-                    message: treatmentResult.message
+                    message: result.message
                 });
             }
 
-            // Step 3: Save to analysis history (if user is authenticated)
+            // Save to analysis history (if user is authenticated)
             if (userId) {
                 try {
                     // Get relative path for storage
@@ -269,45 +318,34 @@ export class AIController {
                     
                     const analysisHistory = new AnalysisHistory({
                         userId,
-                        predictions: analysisResult.predictions,
-                        topPrediction: analysisResult.topPrediction,
-                        treatmentRecommendation: treatmentResult.data?.recommendation,
-                        treatmentTimeline: treatmentResult.data?.timeline,
-                        personalizedNotes: treatmentResult.data?.personalizedNotes,
-                        userAge,
+                        predictions: result.data?.analysis?.predictions || {},
+                        topPrediction: result.data?.analysis?.topPrediction || { condition: 'unknown', confidence: 0 },
+                        treatmentRecommendation: result.data?.treatment?.recommendation,
+                        treatmentTimeline: result.data?.treatment?.timeline?.timeline,
+                        personalizedNotes: result.data?.treatment?.recommendation?.personalizedNotes ? [result.data.treatment.recommendation.personalizedNotes] : [],
                         skinType,
                         currentProducts,
                         originalImageName: req.file.originalname,
                         imageSize: req.file.size,
                         imageType: req.file.mimetype,
-                        imagePath: relativePath, // Save relative path to file
+                        imagePath: relativePath,
                         analysisType: 'comprehensive_analysis',
                         aiModel: 'gpt-4o',
                         success: true
                     });
 
                     await analysisHistory.save();
-                    console.log('Analysis saved to history successfully');
+                    console.log('Optimized analysis saved to history successfully');
                 } catch (historyError) {
                     console.error('Failed to save analysis history:', historyError);
                     // Don't fail the request if history saving fails
                 }
             }
 
-            // Format analysis results
-            const formattedResults = FaceAnalysisService.formatResults(analysisResult.predictions, 3);
-
             return res.json({
                 success: true,
-                message: 'Comprehensive analysis completed successfully',
-                data: {
-                    analysis: {
-                        topPrediction: analysisResult.topPrediction,
-                        allPredictions: formattedResults,
-                        rawPredictions: analysisResult.predictions
-                    },
-                    treatment: treatmentResult.data
-                }
+                message: 'Comprehensive analysis completed successfully with optimized single API call',
+                data: result.data
             });
 
         } catch (error) {

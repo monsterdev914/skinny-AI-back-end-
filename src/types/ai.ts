@@ -9,6 +9,7 @@ export interface FaceAnalysisResult {
         condition: string;
         confidence: number;
     };
+    allPredictions?: FormattedPrediction[];
     message: string;
 }
 
@@ -35,12 +36,14 @@ export interface TreatmentStep {
 
 export interface TreatmentRecommendation {
     condition: string;
+    confidence: number;
     severity: 'mild' | 'moderate' | 'severe';
     overview: string;
     steps: TreatmentStep[];
     expectedResults: string;
     warnings: string[];
     professionalAdvice: string;
+    personalizedNotes?: string;
 }
 
 // Treatment timeline types
@@ -66,13 +69,28 @@ export interface TreatmentTimeline {
     checkupSchedule: string[];
 }
 
+// Age detection types
+export interface AgeDetectionResult {
+    success: boolean;
+    estimatedAge?: number;
+    confidence?: number;
+    ageRange?: string;
+    message: string;
+}
+
 // Combined treatment response
 export interface CompleteTreatmentPlan {
-    condition: string;
-    confidence: number;
-    recommendation: TreatmentRecommendation;
-    timeline: TreatmentTimeline;
-    personalizedNotes: string[];
+    analysis: FaceAnalysisResult;
+    treatment: {
+        success: boolean;
+        message: string;
+        recommendation: TreatmentRecommendation;
+        timeline: {
+            success: boolean;
+            timeline: TreatmentTimeline;
+        };
+    };
+    ageDetection: AgeDetectionResult;
 }
 
 // API Response types

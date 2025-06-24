@@ -1,41 +1,26 @@
-import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
+import express from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { uploadAnalysisImage } from '../middleware/fileUpload';
+import { authenticateToken } from '../middleware/auth';
 import { AIController } from '../controllers/aiController';
 
-const router = Router();
+const router = express.Router();
 
-// Face condition analysis endpoint
-router.post('/analyze-face', 
-    authenticateToken, 
-    uploadAnalysisImage.single('image'), 
-    asyncHandler(AIController.analyzeFaceCondition)
-);
+// Age detection endpoint
+router.post('/detect-age', uploadAnalysisImage.single('image'), asyncHandler(AIController.detectAge));
 
-// Treatment recommendation endpoint
-router.post('/treatment/recommendation',
-    authenticateToken,
-    asyncHandler(AIController.getTreatmentRecommendation)
-);
+// Face analysis endpoints
+router.post('/analyze-face', uploadAnalysisImage.single('image'), asyncHandler(AIController.analyzeFaceCondition));
 
-// Treatment timeline endpoint
-router.get('/treatment/timeline',
-    authenticateToken,
-    asyncHandler(AIController.getTreatmentTimeline)
-);
+// Comprehensive analysis (requires auth to save history)
+router.post('/comprehensive-analysis', authenticateToken, uploadAnalysisImage.single('image'), asyncHandler(AIController.getComprehensiveAnalysis));
 
-// Comprehensive analysis endpoint (analysis + treatment in one call)
-router.post('/comprehensive-analysis',
-    authenticateToken,
-    uploadAnalysisImage.single('image'),
-    asyncHandler(AIController.getComprehensiveAnalysis)
-);
+// Treatment endpoints
+router.post('/treatment/recommendation', asyncHandler(AIController.getTreatmentRecommendation));
+router.get('/treatment/timeline', asyncHandler(AIController.getTreatmentTimeline));
 
-// AI service health check (public endpoint)
+// Health and info endpoints
 router.get('/health', asyncHandler(AIController.getServiceHealth));
-
-// Get available face conditions (public endpoint)
 router.get('/conditions', asyncHandler(AIController.getAvailableConditions));
 
 export default router; 

@@ -21,6 +21,112 @@ export class FaceAnalysisService {
         return this.openai;
     }
 
+    // Detect age from facial image using OpenAI Vision
+    static async detectAgeFromImage(imageBuffer: Buffer): Promise<{ success: boolean; estimatedAge?: number; confidence?: number; message: string }> {
+        try {
+            const openai = this.getOpenAIClient();
+
+            // Convert buffer to base64
+            const base64Image = imageBuffer.toString('base64');
+            const imageUrl = `data:image/jpeg;base64,${base64Image}`;
+
+            // System message for age detection
+            const systemMessage = `You are an expert age estimation AI specializing in facial analysis.
+
+CAPABILITIES:
+- Analyze facial features to estimate chronological age
+- Consider skin texture, wrinkles, facial structure, and other age indicators
+- Provide confidence scores based on visual clarity and feature visibility
+
+IMPORTANT LIMITATIONS:
+- This is an estimate for informational purposes only
+- Age can vary significantly based on genetics, lifestyle, and skincare
+- Cannot be 100% accurate and should not be used for official purposes
+- Focus on apparent age rather than exact chronological age
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object with:
+{
+    "estimatedAge": number (between 18-80),
+    "confidence": number (0-1, where 1 is most confident),
+    "ageRange": "range like '25-30'"}`;
+
+            const userPrompt = `Analyze this facial image and estimate the person's age.
+
+Consider these facial indicators:
+- Skin texture and elasticity
+- Presence and depth of wrinkles (forehead, around eyes, mouth)
+- Facial structure and bone definition  
+- Eye area characteristics (bags, crow's feet, lid elasticity)
+- Skin tone evenness and firmness
+- Overall facial maturity
+
+Provide your best age estimate with a confidence score.
+Return ONLY the JSON object with no additional text.`;
+
+            const response = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "system",
+                        content: systemMessage
+                    },
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: userPrompt },
+                            { type: "image_url", image_url: { url: imageUrl } }
+                        ]
+                    }
+                ],
+                max_tokens: 200,
+                temperature: 0.1, // Low temperature for consistent results
+            });
+
+            const content = response.choices[0]?.message?.content;
+            if (!content) {
+                throw new Error("No response from OpenAI for age detection");
+            }
+
+            // Parse the JSON response
+            let ageResult: { estimatedAge: number; confidence: number; ageRange?: string };
+            try {
+                // Clean the response (remove any non-JSON text)
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) {
+                    throw new Error("No valid JSON found in age detection response");
+                }
+                ageResult = JSON.parse(jsonMatch[0]);
+            } catch (parseError) {
+                console.error("Failed to parse age detection response:", content);
+                throw new Error("Invalid response format from age detection AI");
+            }
+
+            // Validate the response
+            if (!ageResult.estimatedAge || !ageResult.confidence) {
+                throw new Error("Missing required fields in age detection response");
+            }
+
+            // Clamp age to reasonable bounds
+            const clampedAge = Math.max(18, Math.min(80, Math.round(ageResult.estimatedAge)));
+            const clampedConfidence = Math.max(0, Math.min(1, ageResult.confidence));
+
+            return {
+                success: true,
+                estimatedAge: clampedAge,
+                confidence: clampedConfidence,
+                message: `Age estimated successfully: ${clampedAge} years (confidence: ${Math.round(clampedConfidence * 100)}%)`
+            };
+
+        } catch (error) {
+            console.error("Age detection error:", error);
+            return {
+                success: false,
+                message: `Age detection failed: ${(error as Error).message}`
+            };
+        }
+    }
+
     // Analyze face condition using OpenAI Vision
     static async analyzeFaceCondition(imageBuffer: Buffer): Promise<FaceAnalysisResult> {
         try {
@@ -68,7 +174,7 @@ Provide confidence scores (0-1) based on visible evidence in the image.
 Return ONLY the JSON object with no additional text.`;
 
             const response = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                model: "gpt-4o",
                 messages: [
                     {
                         role: "system",
@@ -197,10 +303,10 @@ REQUIRED JSON STRUCTURE:
                 "step": 1,
                 "title": "Treatment step name",
                 "description": "Detailed explanation and rationale",
-                "products": ["Specific product type/ingredient", "Alternative option"],
+                "products": ["product1", "product2"],
                 "frequency": "Application frequency (morning/evening/daily)",
                 "duration": "Expected duration of this step",
-                "tips": ["Professional application tip", "Additional guidance"]
+                "tips": ["Professional tip 1", "Professional tip 2"]
             }
         ],
         "expectedResults": "Realistic timeline and expected improvements",
@@ -268,7 +374,7 @@ Make recommendations evidence-based, safe, and tailored to the user's profile.`;
             }
 
             // Structure the complete treatment plan
-            const completePlan: CompleteTreatmentPlan = {
+            const completePlan = {
                 condition,
                 confidence,
                 recommendation: treatmentPlan.recommendation,
@@ -278,7 +384,7 @@ Make recommendations evidence-based, safe, and tailored to the user's profile.`;
 
             return {
                 success: true,
-                data: completePlan,
+                data: completePlan as any,
                 message: "Treatment recommendation generated successfully"
             };
 
@@ -336,12 +442,12 @@ JSON STRUCTURE:
     "phases": [
         {
             "phase": 1,
-            "title": "Descriptive phase name",
-            "timeframe": "Specific time period (e.g., Weeks 1-4)",
-            "description": "What happens during this phase",
-            "expectedChanges": ["Realistic observable change", "Secondary improvement"],
-            "skinCareAdjustments": ["Routine modifications for this phase"],
-            "milestones": ["Key progress indicators", "Success markers"]
+            "title": "Phase descriptive name",
+            "timeframe": "Duration (e.g., Weeks 1-4)",
+            "description": "What happens in this phase",
+            "expectedChanges": ["Observable change 1", "Observable change 2"],
+            "skinCareAdjustments": ["Routine modification 1"],
+            "milestones": ["Progress indicator 1"]
         }
     ],
     "maintenancePhase": {
@@ -452,5 +558,255 @@ Ensure timelines are realistic, evidence-based, and include appropriate professi
         // TODO: Implement Gradio connection logic
         console.log("Switching to Gradio implementation...");
         // This is where you'll add the Gradio client code later
+    }
+
+    // OPTIMIZED: Get all analysis data in a single OpenAI call
+    static async getComprehensiveAnalysisOptimized(
+        imageBuffer: Buffer,
+        userAge?: number,
+        skinType?: string,
+        currentProducts?: string[]
+    ): Promise<{
+        success: boolean;
+        data?: CompleteTreatmentPlan;
+        message: string;
+    }> {
+        try {
+            const openai = this.getOpenAIClient();
+
+            // Convert buffer to base64
+            const base64Image = imageBuffer.toString('base64');
+            const imageUrl = `data:image/jpeg;base64,${base64Image}`;
+
+            // Comprehensive system message
+            const systemMessage = `You are an expert AI dermatology assistant that provides comprehensive facial skin analysis.
+
+CAPABILITIES:
+- Skin condition analysis and identification
+- Personalized treatment recommendations
+- Treatment timeline planning
+
+ANALYSIS SCOPE:
+Skin conditions: hormonal_acne, forehead_wrinkles, oily_skin, dry_skin, normal_skin, dark_spots, under_eye_bags, rosacea
+
+IMPORTANT LIMITATIONS:
+- For informational purposes only
+- Cannot diagnose medical conditions
+- Cannot replace professional dermatological evaluation
+- Focus on observable surface characteristics
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object with this exact structure:
+{
+    "skinAnalysis": {
+        "topCondition": {
+            "condition": "condition_name",
+            "confidence": number
+        },
+        "allConditions": {
+            "hormonal_acne": number,
+            "forehead_wrinkles": number,
+            "oily_skin": number,
+            "dry_skin": number,
+            "normal_skin": number,
+            "dark_spots": number,
+            "under_eye_bags": number,
+            "rosacea": number
+        }
+    },
+    "treatmentPlan": {
+        "overview": "brief description",
+        "severity": "mild|moderate|severe",
+        "steps": [
+            {
+                "step": 1,
+                "title": "Treatment step name",
+                "description": "Detailed explanation and rationale",
+                "products": ["product1", "product2"],
+                "frequency": "Application frequency (morning/evening/daily)",
+                "duration": "Expected duration of this step",
+                "tips": ["Professional tip 1", "Professional tip 2"]
+            }
+        ],
+        "timeline": {
+            "phases": [
+                {
+                    "phase": 1,
+                    "title": "Phase descriptive name",
+                    "timeframe": "Duration (e.g., Weeks 1-4)",
+                    "description": "What happens in this phase",
+                    "expectedChanges": ["Observable change 1", "Observable change 2"],
+                    "skinCareAdjustments": ["Routine modification 1"],
+                    "milestones": ["Progress indicator 1"]
+                }
+            ],
+            "totalDuration": "string",
+            "keyMilestones": ["milestone1", "milestone2"]
+        },
+        "warnings": ["warning1", "warning2"],
+        "personalizedNotes": "string"
+    }
+}`;
+
+            const userPrompt = `Analyze this facial image and provide comprehensive skin analysis including:
+
+1. SKIN CONDITION ANALYSIS:
+   ANALYZE CAREFULLY FOR THESE CONDITIONS:
+   - hormonal_acne: Look for inflammatory bumps, cysts, comedones (blackheads/whiteheads), typically concentrated on jawline, chin, and lower cheeks
+   - forehead_wrinkles: Examine for horizontal lines, creases, or furrows across the forehead area
+   - oily_skin: Check for shiny appearance, enlarged visible pores, greasy texture, especially in T-zone (forehead, nose, chin)
+   - dry_skin: Look for flaky patches, rough texture, tight appearance, dull complexion, visible dry patches
+   - normal_skin: Even skin tone, balanced moisture, minimal visible pores, smooth texture, healthy glow
+   - dark_spots: Identify hyperpigmentation, age spots, melasma, post-acne marks, uneven pigmentation
+   - under_eye_bags: Examine for puffiness, swelling, dark circles beneath the eyes
+   - rosacea: Look for persistent facial redness, visible blood vessels, papules, flushing patterns
+
+   CONFIDENCE SCORING GUIDELINES:
+   - 0.8-1.0: Very obvious, clearly visible condition
+   - 0.6-0.79: Moderate evidence, likely present
+   - 0.4-0.59: Some signs present, mild condition
+   - 0.2-0.39: Minimal evidence, questionable
+   - 0.0-0.19: No clear evidence of condition
+
+2. TREATMENT RECOMMENDATIONS:
+   BASE RECOMMENDATIONS ON:
+   - Primary detected condition and its severity
+   - Skin type: ${skinType || 'normal'} (consider this in product recommendations)
+   - Current routine: ${currentProducts?.length ? currentProducts.join(', ') : 'none specified'} (avoid conflicts)
+   - Evidence-based dermatological approaches
+   - Gentle, progressive treatment steps
+   - Realistic timelines for improvement
+
+   TREATMENT PLAN REQUIREMENTS:
+   - Start with gentle approaches, escalate gradually
+   - Include specific product types and active ingredients
+   - Provide clear application instructions and frequency
+   - Set realistic expectations for results timeline
+   - Include important safety warnings
+   - Recommend professional consultation when appropriate
+
+ANALYSIS GUIDELINES:
+- Base severity assessment on visual evidence in the image
+- Be conservative with confidence scores unless condition is very obvious
+- Consider lighting and image quality when making assessments
+- Focus on clearly visible surface characteristics only
+- Provide practical, actionable treatment recommendations
+- Include both over-the-counter and professional treatment options
+- Emphasize gentle approaches suitable for sensitive skin
+
+Return ONLY the JSON object with no additional text, following the exact structure specified.`;
+
+            const response = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    {
+                        role: "system",
+                        content: systemMessage
+                    },
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: userPrompt },
+                            { type: "image_url", image_url: { url: imageUrl } }
+                        ]
+                    }
+                ],
+                max_tokens: 2000,
+                temperature: 0.1,
+            });
+
+            const content = response.choices[0]?.message?.content;
+            if (!content) {
+                throw new Error("No response from OpenAI for comprehensive analysis");
+            }
+            console.log("content", content);
+            // Parse the JSON response
+            let analysisResult: any;
+            try {
+                // Check if OpenAI refused to analyze the image
+                if (content.toLowerCase().includes("sorry") || content.toLowerCase().includes("can't analyze") || content.toLowerCase().includes("cannot analyze")) {
+                    throw new Error("Image analysis declined - the image may not contain a clear face or may not be suitable for analysis");
+                }
+
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) {
+                    console.error("OpenAI response (no JSON found):", content);
+                    throw new Error("No valid JSON found in comprehensive analysis response - AI may have declined to analyze the image");
+                }
+                analysisResult = JSON.parse(jsonMatch[0]);
+            } catch (parseError) {
+                console.error("Failed to parse comprehensive analysis response:", content);
+                
+                // Provide more specific error messages
+                if (content.toLowerCase().includes("sorry") || content.toLowerCase().includes("can't") || content.toLowerCase().includes("cannot")) {
+                    throw new Error("Image analysis was declined - please ensure the image shows a clear, well-lit face");
+                }
+                
+                throw new Error("Invalid response format from comprehensive analysis AI");
+            }
+
+            // Validate and format the response
+            if (!analysisResult.skinAnalysis || !analysisResult.treatmentPlan) {
+                throw new Error("Missing required sections in comprehensive analysis response");
+            }
+
+            // Format the response to match our expected structure
+            const formattedResult: CompleteTreatmentPlan = {
+                analysis: {
+                    success: true,
+                    message: "Face analysis completed successfully",
+                    predictions: analysisResult.skinAnalysis.allConditions,
+                    topPrediction: analysisResult.skinAnalysis.topCondition,
+                    allPredictions: this.formatConditionsToArray(analysisResult.skinAnalysis.allConditions)
+                },
+                treatment: {
+                    success: true,
+                    message: "Treatment recommendation generated successfully",
+                    recommendation: {
+                        condition: analysisResult.skinAnalysis.topCondition.condition,
+                        confidence: analysisResult.skinAnalysis.topCondition.confidence,
+                        severity: analysisResult.treatmentPlan.severity,
+                        overview: analysisResult.treatmentPlan.overview,
+                        steps: analysisResult.treatmentPlan.steps,
+                        expectedResults: analysisResult.treatmentPlan.expectedResults || "Results may vary based on individual skin response",
+                        warnings: analysisResult.treatmentPlan.warnings,
+                        professionalAdvice: analysisResult.treatmentPlan.professionalAdvice || "Consult a dermatologist for severe conditions",
+                        personalizedNotes: analysisResult.treatmentPlan.personalizedNotes
+                    },
+                    timeline: {
+                        success: true,
+                        timeline: analysisResult.treatmentPlan.timeline
+                    }
+                },
+                ageDetection: {
+                    success: false,
+                    message: "Age detection not available in optimized comprehensive analysis"
+                }
+            };
+
+            return {
+                success: true,
+                data: formattedResult,
+                message: "Comprehensive analysis completed successfully"
+            };
+
+        } catch (error) {
+            console.error("Comprehensive analysis error:", error);
+            return {
+                success: false,
+                message: `Comprehensive analysis failed: ${(error as Error).message}`
+            };
+        }
+    }
+
+    // Helper method to format conditions object to array
+    private static formatConditionsToArray(conditions: Record<string, number>): FormattedPrediction[] {
+        return Object.entries(conditions)
+            .map(([condition, confidence]) => ({
+                condition,
+                confidence,
+                percentage: `${Math.round(confidence * 100)}%`
+            }))
+            .sort((a, b) => b.confidence - a.confidence);
     }
 } 
