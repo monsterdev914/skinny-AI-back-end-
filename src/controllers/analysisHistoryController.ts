@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import AnalysisHistory, { IAnalysisHistory } from '../models/AnalysisHistory';
+import mongoose from 'mongoose';
 
 export class AnalysisHistoryController {
     // Save analysis result to history
@@ -387,24 +388,38 @@ export class AnalysisHistoryController {
                     .sort({ createdAt: -1 })
                     .lean(),
                 AnalysisHistory.aggregate([
-                    { $match: { userId: userId, success: true } },
+                    { 
+                        $match: { 
+                            userId: new mongoose.Types.ObjectId(userId), 
+                            success: true,
+                            createdAt: { $gte: new Date(Date.now() - 56 * 24 * 60 * 60 * 1000) } // Last 8 weeks
+                        } 
+                    },
+                    {
+                        $addFields: {
+                            weekStart: {
+                                $dateFromParts: {
+                                    isoWeekYear: { $isoWeekYear: '$createdAt' },
+                                    isoWeek: { $isoWeek: '$createdAt' },
+                                    isoDayOfWeek: 1
+                                }
+                            }
+                        }
+                    },
                     {
                         $group: {
-                            _id: {
-                                year: { $year: '$createdAt' },
-                                week: { $week: '$createdAt' }
-                            },
+                            _id: '$weekStart',
                             count: { $sum: 1 }
                         }
                     },
-                    { $sort: { '_id.year': -1, '_id.week': -1 } },
+                    { $sort: { '_id': -1 } },
                     { $limit: 8 }
                 ])
             ]);
 
             // Calculate average confidence
             const averageConfidence = allAnalyses.length > 0 
-                ? allAnalyses.reduce((sum, analysis) => sum + (analysis.topPrediction?.confidence || 0), 0) / allAnalyses.length * 100
+                ? allAnalyses.reduce((sum, analysis) => sum + (analysis.topPrediction?.confidence || 0), 0) / allAnalyses.length
                 : 0;
 
             // Find most common condition
@@ -434,10 +449,35 @@ export class AnalysisHistoryController {
             }
 
             // Format weekly data
-            const weeklyAnalyses = weeklyData.reverse().map((week, index) => ({
-                week: `Week ${week._id.week}`,
-                count: week.count
-            }));
+            console.log('Raw weekly data:', weeklyData);
+            
+            const weeklyAnalyses = weeklyData.reverse().map((week, index) => {
+                const weekDate = new Date(week._id);
+                const now = new Date();
+                const weekStart = new Date(weekDate);
+                const weekEnd = new Date(weekDate);
+                weekEnd.setDate(weekEnd.getDate() + 6);
+                
+                // Calculate week label
+                const weeksAgo = Math.floor((now.getTime() - weekDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+                let weekLabel;
+                
+                if (weeksAgo === 0) {
+                    weekLabel = 'This Week';
+                } else if (weeksAgo === 1) {
+                    weekLabel = 'Last Week';
+                } else {
+                    weekLabel = `${weeksAgo} weeks ago`;
+                }
+
+                return {
+                    week: weekLabel,
+                    count: week.count,
+                    date: weekDate.toISOString()
+                };
+            });
+
+            console.log('Formatted weekly analyses:', weeklyAnalyses);
 
             res.json({
                 success: true,

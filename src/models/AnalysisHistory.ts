@@ -286,9 +286,7 @@ AnalysisHistorySchema.virtual('analysisAge').get(function() {
                 _id: '$topPrediction.condition',
                 count: { $sum: 1 },
                 averageConfidence: { 
-                    $avg: { 
-                        $multiply: ['$topPrediction.confidence', 100] // Convert to percentage
-                    } 
+                    $avg: '$topPrediction.confidence' // Keep as decimal (0-1)
                 },
                 lastAnalysis: { $max: '$createdAt' },
                 firstAnalysis: { $min: '$createdAt' }
@@ -301,7 +299,7 @@ AnalysisHistorySchema.virtual('analysisAge').get(function() {
                 averageConfidence: { 
                     $cond: [
                         { $isNumber: '$averageConfidence' },
-                        { $round: ['$averageConfidence', 0] },
+                        '$averageConfidence',
                         0
                     ]
                 },

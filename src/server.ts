@@ -24,7 +24,8 @@ app.use(cors({
     origin: [
         (process.env as any)['CLIENT_URL'] || 'http://localhost:5173',
         'http://localhost:3000',
-        'http://localhost:5173'
+        'http://localhost:5173',
+        'https://rapid-gladly-platypus.ngrok-free.app'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
