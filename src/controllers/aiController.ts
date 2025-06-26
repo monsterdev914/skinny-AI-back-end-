@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { FaceAnalysisService } from '../services/ai/faceAnalysisService';
 import AnalysisHistory from '../models/AnalysisHistory';
-import { getRelativePath, getFileUrl } from '../middleware/fileUpload';
+import { getRelativePath, getFileUrl, deleteFile } from '../middleware/fileUpload';
 import fs from 'fs';
 
 export class AIController {
@@ -374,6 +374,197 @@ export class AIController {
             return res.status(500).json({
                 success: false,
                 message: 'Health check failed'
+            });
+        }
+    }
+
+    // Validate if image contains suitable skin area for analysis
+    static async validateSkinArea(req: Request, res: Response) {
+        try {
+            // Check if image file is provided
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please upload an image file'
+                });
+            }
+
+            // Validate file type
+            if (!req.file.mimetype.startsWith('image/')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please upload a valid image file'
+                });
+            }
+
+            // Validate file size (10MB limit)
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            if (req.file.size > maxSize) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Image file too large. Maximum size is 10MB'
+                });
+            }
+
+            // Read the saved file for validation
+            const imageBuffer = fs.readFileSync(req.file.path);
+            
+            console.log('Validating skin area in uploaded image...');
+            const result = await FaceAnalysisService.validateSkinArea(imageBuffer);
+
+            // Clean up temporary file
+            if (req.file?.path) {
+                deleteFile(req.file.path);
+            }
+
+            return res.json({
+                success: result.success,
+                message: result.message,
+                data: {
+                    hasFace: result.hasFace,
+                    skinAreaDetected: result.skinAreaDetected,
+                    faceRegion: result.faceRegion,
+                    suitable: result.hasFace && result.skinAreaDetected
+                }
+            });
+
+        } catch (error) {
+            console.error('Skin validation controller error:', error);
+            
+            // Clean up temporary file on error
+            if (req.file?.path) {
+                deleteFile(req.file.path);
+            }
+            
+            return res.status(500).json({
+                success: false,
+                message: 'Internal server error during skin validation'
+            });
+        }
+    }
+
+    // Comprehensive analysis with coordinate detection
+    static async getComprehensiveAnalysisWithCoordinates(req: Request, res: Response) {
+        try {
+            // Check if image file is provided
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please upload an image file'
+                });
+            }
+
+            // Validate file type and size
+            if (!req.file.mimetype.startsWith('image/')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please upload a valid image file'
+                });
+            }
+
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            if (req.file.size > maxSize) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Image file too large. Maximum size is 10MB'
+                });
+            }
+
+            // Get optional user details from request body
+            const { skinType, currentProducts } = req.body || {};
+            const userId = (req as any).user?.id;
+
+            // Read the saved file for analysis
+            const imageBuffer = fs.readFileSync(req.file.path);
+            
+            console.log('Starting comprehensive analysis with coordinate detection...');
+            const result = await FaceAnalysisService.getComprehensiveAnalysisOptimized(
+                imageBuffer,
+                undefined,
+                skinType,
+                currentProducts
+            );
+
+            if (!result.success) {
+                return res.status(500).json({
+                    success: false,
+                    message: result.message
+                });
+            }
+
+            // Save to analysis history with coordinate data
+            if (userId) {
+                try {
+                    const relativePath = getRelativePath(req.file.path);
+                    
+                    console.log('Saving analysis with coordinate data...');
+                    console.log('User ID:', userId);
+                    console.log('Analysis data structure:', {
+                        predictions: result.data?.analysis?.predictions,
+                        topPrediction: result.data?.analysis?.topPrediction,
+                        detectedFeatures: result.data?.analysis?.detectedFeatures,
+                        imageMetadata: result.data?.analysis?.imageMetadata,
+                        treatmentRecommendation: result.data?.treatment?.recommendation,
+                        treatmentTimeline: result.data?.treatment?.timeline?.timeline
+                    });
+                    
+                    // Detailed logging for imageMetadata
+                    console.log('Detailed imageMetadata:', JSON.stringify(result.data?.analysis?.imageMetadata, null, 2));
+                    
+                    const analysisHistory = new AnalysisHistory({
+                        userId,
+                        predictions: result.data?.analysis?.predictions || {},
+                        topPrediction: result.data?.analysis?.topPrediction || { condition: 'unknown', confidence: 0 },
+                        treatmentRecommendation: result.data?.treatment?.recommendation,
+                        treatmentTimeline: result.data?.treatment?.timeline?.timeline,
+                        personalizedNotes: result.data?.treatment?.recommendation?.personalizedNotes ? [result.data.treatment.recommendation.personalizedNotes] : [],
+                        skinType,
+                        currentProducts,
+                        originalImageName: req.file.originalname,
+                        imageSize: req.file.size,
+                        imageType: req.file.mimetype,
+                        imagePath: relativePath,
+                        analysisType: 'comprehensive_with_coordinates',
+                        aiModel: 'gpt-4o-mini',
+                        success: true,
+                        // Store coordinate data as additional metadata (sanitized)
+                        detectedFeatures: (result.data?.analysis?.detectedFeatures || []).map((feature: any) => ({
+                            condition: feature.condition || 'unknown',
+                            confidence: feature.confidence || 0,
+                            coordinates: feature.coordinates || [],
+                            boundingBox: feature.boundingBox || undefined,
+                            area: feature.area || undefined,
+                            severity: feature.severity || 'mild',
+                            description: feature.description || ''
+                        })),
+                        imageMetadata: result.data?.analysis?.imageMetadata
+                    });
+
+                    await analysisHistory.save();
+                    console.log('Analysis with coordinates saved to history successfully');
+                    console.log('Saved analysis ID:', analysisHistory._id);
+                } catch (historyError) {
+                    console.error('Failed to save analysis history:', historyError);
+                    console.error('History save error details:', historyError);
+                }
+            } else {
+                console.log('No userId found - analysis not saved to history');
+            }
+
+            return res.json({
+                success: true,
+                message: 'Comprehensive analysis with coordinates completed successfully',
+                data: {
+                    ...result.data,
+                    analysisType: 'comprehensive_with_coordinates'
+                }
+            });
+
+        } catch (error) {
+            console.error('Comprehensive analysis with coordinates error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Internal server error during coordinate analysis'
             });
         }
     }
