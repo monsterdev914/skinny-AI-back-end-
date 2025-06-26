@@ -68,6 +68,42 @@ interface ITreatmentTimeline {
     checkupSchedule: string[];
 }
 
+// Coordinate interfaces for spatial feature detection
+interface ICoordinate {
+    x: number;
+    y: number;
+}
+
+interface IBoundingBox {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+interface IDetectedFeature {
+    condition: string;
+    confidence: number;
+    coordinates?: ICoordinate[];
+    boundingBox?: IBoundingBox;
+    area?: number; // percentage of affected area
+    severity?: 'mild' | 'moderate' | 'severe';
+    description?: string;
+}
+
+interface IImageMetadata {
+    width: number;
+    height: number;
+    format: string;
+    analyzedRegion?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        description: string;
+    };
+}
+
 // Main analysis history interface
 export interface IAnalysisHistory extends BaseDocument {
     userId: mongoose.Types.ObjectId;
@@ -77,6 +113,7 @@ export interface IAnalysisHistory extends BaseDocument {
     imageSize?: number;
     imageType?: string;
     imagePath?: string; // Relative path to saved image file
+    imageMetadata?: IImageMetadata; // Image dimensions and format
     
     // Analysis results
     predictions: IFaceConditionPredictions;
@@ -84,6 +121,7 @@ export interface IAnalysisHistory extends BaseDocument {
         condition: string;
         confidence: number;
     };
+    detectedFeatures?: IDetectedFeature[]; // Spatial feature detection with coordinates
     
     // Treatment data
     treatmentRecommendation?: ITreatmentRecommendation;
@@ -96,7 +134,7 @@ export interface IAnalysisHistory extends BaseDocument {
     currentProducts?: string[];
     
     // Analysis metadata
-    analysisType: 'face_analysis' | 'comprehensive_analysis';
+    analysisType: 'face_analysis' | 'comprehensive_analysis' | 'comprehensive_with_coordinates';
     aiModel: string; // e.g., 'gpt-4o'
     success: boolean;
     errorMessage?: string;
@@ -132,6 +170,18 @@ const AnalysisHistorySchema: Schema = new Schema({
         type: String,
         required: false
     },
+    imageMetadata: {
+        width: { type: Number, required: false },
+        height: { type: Number, required: false },
+        format: { type: String, required: false },
+        analyzedRegion: {
+            x: { type: Number, required: false, min: 0, max: 1 },
+            y: { type: Number, required: false, min: 0, max: 1 },
+            width: { type: Number, required: false, min: 0, max: 1 },
+            height: { type: Number, required: false, min: 0, max: 1 },
+            description: { type: String, required: false }
+        }
+    },
     
     // Analysis results
     predictions: {
@@ -157,6 +207,25 @@ const AnalysisHistorySchema: Schema = new Schema({
             max: 1
         }
     },
+    
+    // Detected features with coordinates
+    detectedFeatures: [{
+        condition: { type: String, required: true },
+        confidence: { type: Number, required: true, min: 0, max: 1 },
+        coordinates: [{
+            x: { type: Number, required: false, min: 0, max: 1 },
+            y: { type: Number, required: false, min: 0, max: 1 }
+        }],
+        boundingBox: {
+            x: { type: Number, required: false, min: 0, max: 1 },
+            y: { type: Number, required: false, min: 0, max: 1 },
+            width: { type: Number, required: false, min: 0, max: 1 },
+            height: { type: Number, required: false, min: 0, max: 1 }
+        },
+        area: { type: Number, min: 0, max: 100 },
+        severity: { type: String, enum: ['mild', 'moderate', 'severe'] },
+        description: { type: String }
+    }],
     
     // Treatment recommendation
     treatmentRecommendation: {
@@ -218,7 +287,7 @@ const AnalysisHistorySchema: Schema = new Schema({
     // Analysis metadata
     analysisType: {
         type: String,
-        enum: ['face_analysis', 'comprehensive_analysis'],
+        enum: ['face_analysis', 'comprehensive_analysis', 'comprehensive_with_coordinates'],
         required: true
     },
     aiModel: {

@@ -1,3 +1,26 @@
+// Coordinate types for feature detection
+export interface Coordinate {
+    x: number;
+    y: number;
+}
+
+export interface BoundingBox {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+export interface DetectedFeature {
+    condition: string;
+    confidence: number;
+    coordinates?: Coordinate[];
+    boundingBox?: BoundingBox;
+    area?: number; // percentage of affected area
+    severity?: 'mild' | 'moderate' | 'severe';
+    description?: string;
+}
+
 export interface FaceConditionPrediction {
     [condition: string]: number; // condition name -> confidence score
 }
@@ -10,6 +33,12 @@ export interface FaceAnalysisResult {
         confidence: number;
     };
     allPredictions?: FormattedPrediction[];
+    detectedFeatures?: DetectedFeature[]; // New: spatial feature detection
+    imageMetadata?: {
+        width: number;
+        height: number;
+        format: string;
+    };
     message: string;
 }
 

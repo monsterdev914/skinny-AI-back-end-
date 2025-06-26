@@ -14,10 +14,12 @@ const ensureDirectoryExists = (dirPath: string) => {
 const uploadsDir = path.join(process.cwd(), 'uploads');
 const analysisDir = path.join(uploadsDir, 'analysis');
 const avatarsDir = path.join(uploadsDir, 'avatars');
+const tempDir = path.join(uploadsDir, 'temp'); // For temporary validation files
 
 ensureDirectoryExists(uploadsDir);
 ensureDirectoryExists(analysisDir);
 ensureDirectoryExists(avatarsDir);
+ensureDirectoryExists(tempDir);
 
 // Storage configuration for analysis images
 const analysisStorage = multer.diskStorage({
@@ -64,6 +66,19 @@ const avatarStorage = multer.diskStorage({
     }
 });
 
+// Storage configuration for temporary files (validation, etc.)
+const tempStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, tempDir);
+    },
+    filename: (_req, file, cb) => {
+        // Generate unique filename with timestamp
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, `temp-${uniqueSuffix}${ext}`);
+    }
+});
+
 // File filter for images only
 const imageFileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     if (file.mimetype.startsWith('image/')) {
@@ -87,6 +102,15 @@ export const uploadAvatarImage = multer({
     storage: avatarStorage,
     limits: {
         fileSize: 2 * 1024 * 1024, // 2MB limit (since frontend compresses to 150KB)
+    },
+    fileFilter: imageFileFilter
+});
+
+// Temporary image upload middleware (for validation, no auth required)
+export const uploadTempImage = multer({
+    storage: tempStorage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB limit
     },
     fileFilter: imageFileFilter
 });
