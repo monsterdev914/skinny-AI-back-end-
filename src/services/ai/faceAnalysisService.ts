@@ -137,10 +137,10 @@ Return ONLY the JSON object with no additional text.`;
             const imageUrl = `data:image/jpeg;base64,${base64Image}`;
 
             // Enhanced system message for face analysis
-            const systemMessage = `You are an AI dermatology assistant specializing in facial skin analysis. 
+            const systemMessage = `You are an AI dermatology assistant specializing in facial and general skin analysis. 
 
 CAPABILITIES:
-- Analyze facial skin images for common conditions
+- Analyze facial skin images for common conditions and general skin care
 - Provide confidence scores based on visual evidence
 - Focus on observable surface-level skin characteristics
 
@@ -560,152 +560,137 @@ Ensure timelines are realistic, evidence-based, and include appropriate professi
         // This is where you'll add the Gradio client code later
     }
 
-    // Validate if image contains face/skin area suitable for analysis
+    // Validate if image contains skin areas suitable for comprehensive analysis using MediaPipe
     static async validateSkinArea(imageBuffer: Buffer): Promise<{
         success: boolean;
         hasFace: boolean;
         skinAreaDetected: boolean;
+        imageQuality?: 'excellent' | 'good' | 'fair' | 'poor';
         faceRegion?: {
             x: number;
             y: number;
             width: number;
             height: number;
         };
+        visibleSkinAreas?: {
+            face?: boolean;
+            arms?: boolean;
+            hands?: boolean;
+            legs?: boolean;
+            torso?: boolean;
+            neck?: boolean;
+        };
+        analysisRecommendation?: 'proceed' | 'retake' | 'insufficient';
+        issues?: string[];
         message: string;
+        // New fields for MediaPipe-based detection
+        skinRegions?: Array<{
+            id: string;
+            bodyPart: string;
+            polygon: Array<{ x: number; y: number }>;
+            area: number;
+            confidence: number;
+        }>;
+        skinCoveragePercentage?: number;
     }> {
         try {
-            const openai = this.getOpenAIClient();
-
-            // Convert buffer to base64
-            const base64Image = imageBuffer.toString('base64');
-            const imageUrl = `data:image/jpeg;base64,${base64Image}`;
-
-            const systemMessage = `You are an expert image analysis AI specializing in facial and skin detection.
-
-CAPABILITIES:
-- Detect presence of human faces in images
-- Identify skin areas suitable for dermatological analysis
-- Determine image quality and suitability for skin analysis
-- Provide face region coordinates when detected
-
-ANALYSIS REQUIREMENTS:
-- Face must be clearly visible and well-lit
-- Skin areas must be in focus and not heavily obscured
-- Image quality must be sufficient for detailed analysis
-- Face should occupy reasonable portion of image
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON object with:
-{
-    "hasFace": boolean,
-    "skinAreaDetected": boolean,
-    "imageQuality": "excellent|good|fair|poor",
-    "faceRegion": {
-        "x": normalized_x_0_to_1,
-        "y": normalized_y_0_to_1,
-        "width": normalized_width_0_to_1,
-        "height": normalized_height_0_to_1
-    },
-    "skinVisibility": {
-        "forehead": boolean,
-        "cheeks": boolean,
-        "chin": boolean,
-        "eyeArea": boolean
-    },
-    "analysisRecommendation": "proceed|retake|insufficient",
-    "issues": ["issue1", "issue2"] // if any problems detected
-}`;
-
-            const userPrompt = `Analyze this image to determine if it contains a suitable face/skin area for dermatological analysis.
-
-Check for:
-1. FACE DETECTION:
-   - Is there a clear human face visible?
-   - Is the face the main subject of the image?
-   - Is the face orientation suitable (front-facing or slight angle)?
-
-2. SKIN VISIBILITY:
-   - Are key facial skin areas visible (forehead, cheeks, chin)?
-   - Is the skin well-lit and in focus?
-   - Are there any major obstructions (hands, hair, accessories)?
-
-3. IMAGE QUALITY:
-   - Is the image resolution adequate for analysis?
-   - Is the lighting sufficient to see skin details?
-   - Is the image clear (not blurry or pixelated)?
-
-4. ANALYSIS SUITABILITY:
-   - Would this image provide reliable results for skin condition analysis?
-   - Are there any factors that would interfere with accurate analysis?
-
-If a face is detected, provide the normalized coordinates (0-1 scale) of the face region.
-
-Return ONLY the JSON object with no additional text.`;
-
-            const response = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: [
-                    {
-                        role: "system",
-                        content: systemMessage
-                    },
-                    {
-                        role: "user",
-                        content: [
-                            { type: "text", text: userPrompt },
-                            { type: "image_url", image_url: { url: imageUrl } }
-                        ]
-                    }
-                ],
-                max_tokens: 400,
-                temperature: 0.1,
-            });
-
-            const content = response.choices[0]?.message?.content;
-            if (!content) {
-                throw new Error("No response from OpenAI for skin area validation");
+            // Use MediaPipe-based skin detection instead of OpenAI
+            const { SkinDetectionService } = await import('./skinDetectionService');
+            const skinDetector = new SkinDetectionService();
+            
+            // Detect skin areas using MediaPipe
+            const skinDetection = await skinDetector.detectSkinAreas(imageBuffer);
+            
+            if (!skinDetection.success) {
+                return {
+                    success: false,
+                    hasFace: false,
+                    skinAreaDetected: false,
+                    message: `MediaPipe skin detection failed: ${skinDetection.message}`
+                };
             }
 
-            // Parse the JSON response
-            let validationResult: any;
-            try {
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                if (!jsonMatch) {
-                    throw new Error("No valid JSON found in skin validation response");
-                }
-                validationResult = JSON.parse(jsonMatch[0]);
-            } catch (parseError) {
-                console.error("Failed to parse skin validation response:", content);
-                throw new Error("Invalid response format from skin validation AI");
+            // Determine image quality based on skin detection results
+            let imageQuality: 'excellent' | 'good' | 'fair' | 'poor' = 'fair';
+            if (skinDetection.skinCoveragePercentage > 20) {
+                imageQuality = 'excellent';
+            } else if (skinDetection.skinCoveragePercentage > 10) {
+                imageQuality = 'good';
+            } else if (skinDetection.skinCoveragePercentage > 5) {
+                imageQuality = 'fair';
+            } else {
+                imageQuality = 'poor';
             }
 
-            // Validate the response structure
-            if (typeof validationResult.hasFace !== 'boolean' || typeof validationResult.skinAreaDetected !== 'boolean') {
-                throw new Error("Invalid validation response structure");
+            // Find face region if present
+            const faceRegion = skinDetection.regions.find(r => r.bodyPart === 'face');
+            const normalizedFaceRegion = faceRegion ? {
+                x: faceRegion.boundingBox.x / skinDetection.totalImageArea ** 0.5,
+                y: faceRegion.boundingBox.y / skinDetection.totalImageArea ** 0.5,
+                width: faceRegion.boundingBox.width / skinDetection.totalImageArea ** 0.5,
+                height: faceRegion.boundingBox.height / skinDetection.totalImageArea ** 0.5
+            } : undefined;
+
+            // Determine analysis recommendation
+            let analysisRecommendation: 'proceed' | 'retake' | 'insufficient';
+            const issues: string[] = [];
+
+            if (skinDetection.skinCoveragePercentage < 2) {
+                analysisRecommendation = 'insufficient';
+                issues.push('Insufficient skin area visible for analysis');
+            } else if (skinDetection.skinCoveragePercentage < 5) {
+                analysisRecommendation = 'retake';
+                issues.push('Limited skin area detected - consider retaking with more exposed skin');
+            } else {
+                analysisRecommendation = 'proceed';
             }
 
-            return {
+            // Clean up resources
+            skinDetector.dispose();
+
+            const result: any = {
                 success: true,
-                hasFace: validationResult.hasFace,
-                skinAreaDetected: validationResult.skinAreaDetected,
-                faceRegion: validationResult.faceRegion,
-                message: validationResult.analysisRecommendation === 'proceed' 
-                    ? "Image is suitable for skin analysis"
-                    : `Image validation issues: ${validationResult.issues?.join(', ') || 'Unknown issues'}`
+                hasFace: skinDetection.visibleSkinAreas.face || false,
+                skinAreaDetected: skinDetection.regions.length > 0,
+                imageQuality,
+                visibleSkinAreas: skinDetection.visibleSkinAreas,
+                analysisRecommendation,
+                message: analysisRecommendation === 'proceed' 
+                    ? `MediaPipe detected ${skinDetection.regions.length} skin regions covering ${skinDetection.skinCoveragePercentage.toFixed(1)}% of image`
+                    : `Image validation issues: ${issues.join(', ')}`,
+                // Include MediaPipe-specific data
+                skinRegions: skinDetection.regions.map(region => ({
+                    id: region.id,
+                    bodyPart: region.bodyPart,
+                    polygon: region.polygon,
+                    area: region.area,
+                    confidence: region.confidence
+                })),
+                skinCoveragePercentage: skinDetection.skinCoveragePercentage
             };
 
+            // Add optional properties only if they exist
+            if (normalizedFaceRegion) {
+                result.faceRegion = normalizedFaceRegion;
+            }
+            if (issues.length > 0) {
+                result.issues = issues;
+            }
+
+            return result;
+
         } catch (error) {
-            console.error("Skin area validation error:", error);
+            console.error("MediaPipe skin area validation error:", error);
             return {
                 success: false,
                 hasFace: false,
                 skinAreaDetected: false,
-                message: `Skin area validation failed: ${(error as Error).message}`
+                message: `MediaPipe skin area validation failed: ${(error as Error).message}`
             };
         }
     }
 
-    // OPTIMIZED: Get all analysis data in a single OpenAI call with skin area validation
+    // OPTIMIZED: Get all analysis data in a single OpenAI call with comprehensive skin area analysis
     static async getComprehensiveAnalysisOptimized(
         imageBuffer: Buffer,
         userAge?: number,
@@ -717,71 +702,66 @@ Return ONLY the JSON object with no additional text.`;
         message: string;
     }> {
         try {
-            // STEP 1: Validate skin area first
-            console.log("Step 1: Validating skin area in image...");
+            // STEP 1: Validate that image contains analyzable skin areas using MediaPipe
+            console.log("Step 1: Validating skin areas in image using MediaPipe...");
             const skinValidation = await this.validateSkinArea(imageBuffer);
-            
+            console.log("Skin validation:", skinValidation);    
             if (!skinValidation.success) {
                 return {
                     success: false,
-                    message: `Image validation failed: ${skinValidation.message}`
+                    message: `MediaPipe validation failed: ${skinValidation.message}`
                 };
             }
 
-            if (!skinValidation.hasFace || !skinValidation.skinAreaDetected) {
+            if (!skinValidation.skinAreaDetected) {
                 return {
                     success: false,
-                    message: `Unable to proceed with analysis: ${
-                        !skinValidation.hasFace 
-                            ? "No clear face detected in the image" 
-                            : "Insufficient skin area visible for analysis"
-                    }. Please ensure the image shows a clear, well-lit face with visible skin areas.`
+                    message: "Unable to proceed with analysis: MediaPipe could not detect sufficient skin areas. Please ensure the image shows clear, well-lit skin areas."
                 };
             }
 
-            console.log("✅ Skin area validation passed - proceeding with detailed analysis");
+            console.log("✅ MediaPipe skin area validation passed - proceeding with comprehensive skin analysis");
+            console.log(`Detected ${skinValidation.skinRegions?.length} skin regions covering ${skinValidation.skinCoveragePercentage?.toFixed(1)}% of image`);
 
-            // STEP 2: Proceed with comprehensive analysis
+            // STEP 2: Proceed with comprehensive skin analysis
             const openai = this.getOpenAIClient();
 
             // Convert buffer to base64
             const base64Image = imageBuffer.toString('base64');
             const imageUrl = `data:image/jpeg;base64,${base64Image}`;
 
-            // Comprehensive system message with coordinate detection
-            const systemMessage = `You are an expert AI dermatology assistant that provides comprehensive facial skin analysis with spatial feature detection.
+            // Comprehensive system message for all skin analysis
+            const systemMessage = `You are an expert AI dermatology assistant specializing in comprehensive skin analysis across all visible body areas.
 
 CAPABILITIES:
-- Skin condition analysis and identification with precise coordinate mapping
-- Spatial feature detection and localization within the validated face region
-- Personalized treatment recommendations
-- Treatment timeline planning
+- Analyze all visible skin areas in images (face, arms, hands, legs, torso, etc.)
+- Identify skin conditions with precise coordinate mapping across any body part
+- Provide spatial feature detection and localization for any skin area
+- Generate personalized treatment recommendations for detected skin conditions
+- Create treatment timelines for various skin conditions
 
 ANALYSIS SCOPE:
-Skin conditions: hormonal_acne, forehead_wrinkles, oily_skin, dry_skin, normal_skin, dark_spots, under_eye_bags, rosacea
+Skin conditions to detect: hormonal_acne, forehead_wrinkles, oily_skin, dry_skin, normal_skin, dark_spots, under_eye_bags, rosacea, eczema, psoriasis, keratosis_pilaris, stretch_marks, scars, moles, sun_damage, age_spots, seborrheic_keratosis
 
-IMPORTANT - ANALYSIS FOCUS AREA:
-${skinValidation.faceRegion ? 
-`VALIDATED FACE REGION DETECTED:
-- Face region coordinates: x=${skinValidation.faceRegion.x.toFixed(3)}, y=${skinValidation.faceRegion.y.toFixed(3)}, width=${skinValidation.faceRegion.width.toFixed(3)}, height=${skinValidation.faceRegion.height.toFixed(3)}
-- FOCUS YOUR ANALYSIS ONLY ON THIS VALIDATED FACE AREA
-- All coordinate detection should be relative to the FULL IMAGE dimensions but concentrate on features within this face region
-- Ignore areas outside the validated face region for skin condition analysis` 
-: 'FOCUS ON THE MAIN FACIAL AREA - analyze only the clear face region visible in the image'}
+ANALYSIS APPROACH:
+- Examine ALL visible skin areas in the image systematically
+- Do not limit analysis to facial areas only
+- Include any exposed skin on arms, hands, legs, torso, neck, etc.
+- Identify the most distinctive and prominent features of each condition
+- Focus on areas where conditions are most clearly visible and characteristic
 
-COORDINATE DETECTION:
-- Analyze the image dimensions and provide relative coordinates (0-1 scale) for the FULL IMAGE
-- Identify specific locations of skin conditions WITHIN THE VALIDATED FACE REGION
-- All coordinates should be normalized to the full image (0-1 scale) but features should be from the face area only
-- Calculate affected area percentages relative to the face region
-- CRITICAL FOR FOREHEAD WRINKLES: Place coordinates on the exposed skin between eyebrows and hairline, NEVER on hair areas
-- Ensure all coordinates are on visible skin surface, not on hair, scalp, or hairline areas
+COORDINATE DETECTION REQUIREMENTS:
+- Analyze the entire image for all visible skin areas
+- Provide normalized coordinates (0-1 scale) relative to the FULL IMAGE dimensions
+- For each detected condition, identify the SINGLE MOST DISTINCTIVE point where the condition is most clearly visible
+- Coordinates should represent the most obvious, characteristic, and severe manifestation of each condition
+- Calculate affected area percentages relative to the total visible skin in the image
 
-IMPORTANT LIMITATIONS:
-- For informational purposes only
-- Cannot diagnose medical conditions
-- Cannot replace professional dermatological evaluation
-- Focus on observable surface characteristics WITHIN THE VALIDATED FACE AREA
+IMPORTANT PRINCIPLES:
+- Focus on observable surface-level skin characteristics across all body areas
+- This analysis is for informational purposes only
+- Cannot diagnose medical conditions or replace professional evaluation
+- Concentrate on clearly visible skin conditions that can be reliably identified
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object with this exact structure:
@@ -790,12 +770,10 @@ Return ONLY a valid JSON object with this exact structure:
         "width": estimated_width_pixels,
         "height": estimated_height_pixels,
         "aspectRatio": width/height,
-        "analyzedRegion": {
-            "x": face_region_x,
-            "y": face_region_y,
-            "width": face_region_width,
-            "height": face_region_height,
-            "description": "Face region that was analyzed"
+        "skinCoverage": {
+            "totalSkinAreaPercentage": percentage_of_image_showing_skin,
+            "visibleSkinRegions": ["face", "arms", "hands", "etc"],
+            "description": "Description of all visible skin areas in the image"
         }
     },
     "skinAnalysis": {
@@ -811,29 +789,40 @@ Return ONLY a valid JSON object with this exact structure:
             "normal_skin": number,
             "dark_spots": number,
             "under_eye_bags": number,
-            "rosacea": number
+            "rosacea": number,
+            "eczema": number,
+            "psoriasis": number,
+            "keratosis_pilaris": number,
+            "stretch_marks": number,
+            "scars": number,
+            "moles": number,
+            "sun_damage": number,
+            "age_spots": number,
+            "seborrheic_keratosis": number
         },
         "detectedFeatures": [
             {
                 "condition": "condition_name",
                 "confidence": number,
                 "coordinates": [
-                    {"x": normalized_x_within_face_region_0_to_1, "y": normalized_y_within_face_region_0_to_1}
+                    {"x": normalized_x_0_to_1, "y": normalized_y_0_to_1}
                 ],
-                "area": percentage_of_affected_area_within_face,
+                "area": percentage_of_affected_area,
                 "severity": "mild|moderate|severe",
-                "description": "detailed description of the detected feature within the face region",
+                "bodyRegion": "face|arm|hand|leg|torso|neck|etc",
+                "description": "detailed description of the detected feature and its location",
+                "distinctiveCharacteristics": "what makes this the most distinctive example of this condition",
                 "coordinateVerification": {
                     "isOnSkin": true,
-                    "isNotOnHair": true,
-                    "isWithinFaceRegion": true,
-                    "skinAreaDescription": "description of the exact skin area where coordinate is placed"
+                    "isNotOnClothing": true,
+                    "isMostDistinctive": true,
+                    "skinAreaDescription": "exact description of the skin area where coordinate is placed"
                 }
             }
         ]
     },
     "treatmentPlan": {
-        "overview": "brief description",
+        "overview": "brief description focusing on the most prominent conditions",
         "severity": "mild|moderate|severe",
         "steps": [
             {
@@ -866,227 +855,161 @@ Return ONLY a valid JSON object with this exact structure:
     }
 }`;
 
-            const userPrompt = `FOLLOW THIS EXACT 3-STEP ANALYSIS PROCESS:
+            const userPrompt = `COMPREHENSIVE SKIN ANALYSIS - FOLLOW THIS 4-STEP PROCESS:
 
-STEP 1: SKIN AREA VERIFICATION AND MAPPING
-First, verify that this image contains suitable skin areas for analysis:
+DETECTED SKIN REGIONS (MediaPipe Pre-Analysis):
+MediaPipe has already detected the following skin regions in this image:
+${skinValidation.skinRegions?.map((region, index) => 
+    `Region ${index + 1}: ${region.bodyPart.toUpperCase()} (Area: ${region.area} pixels, Confidence: ${region.confidence.toFixed(2)})`
+).join('\n') || 'No specific regions detected'}
 
-SKIN AREA IDENTIFICATION AND VALIDATION:
-1. Examine the entire image to identify all exposed skin areas
-2. Map the forehead skin area - the smooth surface between eyebrows and hairline
-3. Identify cheek areas - smooth skin on the sides of the face
-4. Map the nose area - the central facial skin area
-5. Locate chin and jawline skin areas
-6. Verify these areas are well-lit, in focus, and suitable for analysis
+Total skin coverage: ${skinValidation.skinCoveragePercentage?.toFixed(1)}% of image
+Visible body areas: ${Object.keys(skinValidation.visibleSkinAreas || {}).join(', ')}
 
-EXCLUSION MAPPING (CRITICAL):
-1. Identify and exclude ALL hair areas (scalp, hairline, hair strands)
-2. Exclude eyebrow areas from skin analysis
-3. Exclude shadows, clothing, accessories, or obstructed areas
-4. Create a precise map of ONLY the exposed, analyzable skin surfaces
-5. Confirm skin areas are free from obstructions and clearly visible
+STEP 1: COMPLETE SKIN AREA MAPPING
+Using the MediaPipe pre-analysis, focus your analysis on the CONFIRMED skin areas:
 
-STEP 2: COMPREHENSIVE SKIN FEATURE ANALYSIS
-Analyze ONLY the verified skin areas from Step 1 for skin conditions:
+PRIMARY ANALYSIS TARGETS (MediaPipe-Confirmed):
+${skinValidation.skinRegions?.map(region => 
+    `- ${region.bodyPart.toUpperCase()}: polygon area with ${region.area} pixels (confidence: ${region.confidence.toFixed(2)})`
+).join('\n') || '- Analyze all visible skin areas in the image'}
 
-${skinValidation.faceRegion ? 
-   `VALIDATED FACE REGION BOUNDARIES:
-   - X: ${skinValidation.faceRegion.x.toFixed(3)} (${Math.round(skinValidation.faceRegion.x * 100)}% from left)
-   - Y: ${skinValidation.faceRegion.y.toFixed(3)} (${Math.round(skinValidation.faceRegion.y * 100)}% from top)  
-   - Width: ${skinValidation.faceRegion.width.toFixed(3)} (${Math.round(skinValidation.faceRegion.width * 100)}% of image width)
-   - Height: ${skinValidation.faceRegion.height.toFixed(3)} (${Math.round(skinValidation.faceRegion.height * 100)}% of image height)
-   
-   ANALYZE ONLY SKIN AREAS WITHIN THESE BOUNDARIES. Completely exclude hair, eyebrows, and non-skin areas.` 
-   : 'Focus your analysis on exposed skin areas within the main facial region visible in the image.'}
+SKIN AREA VALIDATION:
+- MediaPipe has confirmed these areas contain actual skin pixels
+- Focus analysis on the pre-identified skin regions
+- Use MediaPipe boundaries to guide your condition detection
+- Prioritize areas with higher confidence scores
 
-SKIN FEATURE DETECTION AND ANALYSIS:
-Within the verified skin areas from Step 1, systematically analyze for these conditions:
+STEP 2: SYSTEMATIC CONDITION DETECTION
+Analyze each mapped skin area for ALL possible skin conditions:
 
-FOR EACH SKIN AREA, EXAMINE:
-- Forehead skin: Look for wrinkles, lines, texture changes, oiliness, dryness
-- Cheek areas: Look for acne, rosacea, dark spots, texture, oiliness
-- Nose area: Look for blackheads, oiliness, redness, texture
-- Chin/jawline: Look for acne, texture changes, oiliness
-- Under-eye area: Look for bags, puffiness, dark circles
+FOR EACH SKIN REGION, EXAMINE FOR:
+- Acne conditions: hormonal_acne, comedones, inflammatory lesions
+- Texture issues: oily_skin, dry_skin, rough patches
+- Pigmentation: dark_spots, age_spots, sun_damage, melasma
+- Aging signs: wrinkles, fine lines, elasticity loss
+- Inflammatory conditions: rosacea, eczema, psoriasis
+- Structural features: moles, scars, stretch_marks
+- Texture disorders: keratosis_pilaris, seborrheic_keratosis
+- Vascular issues: spider veins, broken capillaries
 
-FEATURE ANALYSIS PROTOCOL:
-1. Scan each verified skin area systematically
-2. Identify ALL instances of each skin condition within skin boundaries
-3. Assess the severity and distribution pattern of each condition
-4. Note areas where conditions are most concentrated or severe
-5. Prepare for Step 3 coordinate placement based on density analysis
+CONDITION ANALYSIS PROTOCOL:
+1. Scan each skin area methodically for all condition types
+2. Assess severity and distribution patterns
+3. Note areas where conditions are most pronounced
+4. Identify co-occurring conditions in the same regions
+5. Prepare comprehensive condition mapping across all skin areas
 
-STEP 3: CHARACTERISTIC POINT IDENTIFICATION
-For each detected feature, find the single most characteristic point with highest density:
+STEP 3: MOST DISTINCTIVE FEATURE IDENTIFICATION
+For each detected condition, identify the SINGLE MOST DISTINCTIVE point:
 
-CRITICAL COORDINATE SYSTEM:
-- All coordinates must be normalized (0.0 to 1.0) relative to the ANALYZED FACE REGION, NOT the full image
-- Think of the face region as a separate coordinate system where:
-  - (0.0, 0.0) = top-left corner of the face region
-  - (1.0, 1.0) = bottom-right corner of the face region
-  - (0.5, 0.5) = center of the face region
-- Example: If you detect a forehead wrinkle in the upper-center of the face region, use coordinates like (0.5, 0.2)
-- All coordinates should describe positions WITHIN the face boundaries using this 0-1 face-relative system
-   
-CHARACTERISTIC POINT IDENTIFICATION PROTOCOL:
-For each condition detected in Step 2, apply this density-based coordinate selection:
+DISTINCTIVE POINT SELECTION CRITERIA:
+- VISIBILITY: Most clearly visible and obvious manifestation
+- SEVERITY: Most severe or pronounced example of the condition
+- CLARITY: Clearest representation without ambiguity
+- ACCESSIBILITY: Easily identifiable and describable location
+- CHARACTERISTIC: Most typical example of how this condition appears
 
-FOREHEAD_WRINKLES:
-1. Review the mapped forehead skin area from Step 1
-2. Analyze ALL wrinkle patterns within this skin area only
-3. Identify zones where wrinkle density is highest
-4. Find the EPICENTER where multiple wrinkles converge or are most pronounced
-5. Mark the CENTER POINT of the highest density wrinkle zone on exposed skin
-6. Ensure coordinate is well within skin boundaries, away from hair/hairline
+COORDINATE SYSTEM:
+- All coordinates normalized (0.0 to 1.0) relative to FULL IMAGE dimensions
+- (0.0, 0.0) = top-left corner of entire image
+- (1.0, 1.0) = bottom-right corner of entire image
+- (0.5, 0.5) = center of entire image
+
+CONDITION-SPECIFIC DISTINCTIVE POINT IDENTIFICATION:
 
 HORMONAL_ACNE:
-1. Review all mapped skin areas from Step 1 for acne presence
-2. Identify ALL acne lesions (bumps, cysts, comedones) within skin boundaries
-3. Find areas where acne lesions are most concentrated/clustered
-4. Mark the CENTER POINT of the highest density acne cluster
-5. Ensure coordinate represents the most characteristic acne concentration
-   
+1. Scan all skin areas for inflammatory acne lesions
+2. Identify the LARGEST, most inflamed, or most characteristic lesion
+3. Mark the CENTER of the most distinctive acne lesion
+4. Prefer jawline, chin, or neck acne if present (most characteristic of hormonal)
+
+DARK_SPOTS/AGE_SPOTS:
+1. Examine all skin for pigmentation irregularities
+2. Find the DARKEST, most well-defined, or largest spot
+3. Mark the CENTER of the most distinctive dark spot
+4. Prefer spots that are clearly different from surrounding skin
+
+ECZEMA:
+1. Look for red, inflamed, scaly patches on any skin area
+2. Identify the most INFLAMED or characteristic eczema patch
+3. Mark the CENTER of the most distinctive eczema lesion
+4. Focus on areas with clear eczema characteristics (scaling, redness)
+
+PSORIASIS:
+1. Search for thick, scaly, silvery patches on skin
+2. Find the most CHARACTERISTIC psoriasis plaque
+3. Mark the CENTER of the most distinctive psoriasis lesion
+4. Prefer well-defined plaques with typical scaling
+
+KERATOSIS_PILARIS:
+1. Examine arms, legs, or other areas for bumpy texture
+2. Find the area with most PRONOUNCED bump concentration
+3. Mark the CENTER of the most distinctive bumpy patch
+4. Focus on areas where "chicken skin" texture is most obvious
+
+STRETCH_MARKS:
+1. Look for linear marks on skin (any body area)
+2. Find the most VISIBLE or pronounced stretch mark
+3. Mark the CENTER point of the most distinctive stretch mark
+4. Prefer marks that are clearly defined and characteristic
+
+SCARS:
+1. Examine all skin for scar tissue
+2. Identify the most PROMINENT or characteristic scar
+3. Mark the CENTER of the most distinctive scar
+4. Prefer scars that are clearly different from surrounding skin
+
+MOLES:
+1. Look for pigmented lesions across all skin areas
+2. Find the most PROMINENT or distinctive mole
+3. Mark the CENTER of the most notable mole
+4. Prefer moles that are clearly defined and visible
+
 OILY_SKIN:
-1. Review all mapped skin areas from Step 1 for oiliness indicators
-2. Look for shine, enlarged pores, greasy texture within skin boundaries
-3. Identify zones with highest concentration of oil/shine
-4. Mark the CENTER POINT of the most oily/shiny skin zone
-5. Focus on areas like T-zone (forehead, nose) or cheeks where oil is most concentrated
+1. Examine skin for shine, enlarged pores, greasy appearance
+2. Find the area with most PRONOUNCED oily characteristics
+3. Mark the CENTER of the most distinctively oily zone
+4. Focus on T-zone or other areas where oil is most obvious
 
 DRY_SKIN:
-1. Review all mapped skin areas from Step 1 for dryness indicators
-2. Look for flaky patches, rough texture, tight appearance within skin boundaries
-3. Identify zones with highest concentration of dryness/flakiness
-4. Mark the CENTER POINT of the most severely dry skin zone
-5. Ensure coordinate represents the most characteristic dry skin area
+1. Look for flaky, rough, or tight-appearing skin
+2. Find the area with most SEVERE dryness indicators
+3. Mark the CENTER of the most distinctively dry patch
+4. Prefer areas with visible flaking or texture changes
 
-DARK_SPOTS:
-1. Review all mapped skin areas from Step 1 for pigmentation
-2. Identify hyperpigmentation, age spots, melasma within skin boundaries
-3. Find zones with highest concentration of dark spots/pigmentation
-4. Mark the CENTER POINT of the most densely pigmented zone
-5. Focus on areas where dark spots cluster or are most pronounced
+STEP 4: COORDINATE VERIFICATION AND VALIDATION
+Before finalizing each coordinate, verify:
 
-UNDER_EYE_BAGS:
-1. Review the under-eye skin area mapped in Step 1
-2. Examine for puffiness, swelling, dark circles within this skin area
-3. Identify the zone with most pronounced bag/puffiness concentration
-4. Mark the CENTER POINT of the most severe under-eye bag area
-5. Ensure coordinate represents the most characteristic point of the condition
+VERIFICATION CHECKLIST:
+1. ✓ Is this coordinate on actual skin (not clothing/accessories)?
+2. ✓ Is this the MOST distinctive example of this condition in the image?
+3. ✓ Are coordinates normalized to full image (0.0-1.0)?
+4. ✓ Is the condition clearly visible and identifiable at this location?
+5. ✓ Does this represent the best example of this condition in the image?
 
-ROSACEA:
-1. Review all mapped facial skin areas from Step 1 for redness
-2. Look for persistent redness, visible blood vessels within skin boundaries
-3. Identify zones with highest concentration of redness/inflammation
-4. Mark the CENTER POINT of the most intensely red/inflamed zone
-5. Focus on typical rosacea areas (cheeks, nose, chin) where redness is most concentrated
+QUALITY CONTROL:
+- Only include conditions with confidence ≥ 0.4
+- Only place coordinates for clearly visible conditions
+- Ensure each coordinate represents the most obvious manifestation
+- Provide detailed descriptions of why each location is most distinctive
+- Double-check that coordinates accurately represent the described features
 
-   SKIN AREA BOUNDARIES TO FOCUS ON:
-   - Forehead: ONLY the exposed skin area between eyebrows and hairline (exclude hair)
-   - Cheeks: The clear skin area on both sides of the face
-   - Nose: The entire nose area and surrounding skin
-   - Chin and jawline: The exposed skin area
+TREATMENT CONSIDERATIONS:
+Based on all detected conditions across all skin areas:
+- Skin type: ${skinType || 'normal'} (consider in recommendations)
+- Current routine: ${currentProducts?.length ? currentProducts.join(', ') : 'none specified'}
+- Focus on the most prominent conditions detected
+- Provide comprehensive care for all affected body areas
 
-FINAL COORDINATE VERIFICATION:
-Before outputting coordinates, verify for each point:
-1. Is this coordinate within the analyzed face region boundaries?
-2. Is this coordinate on actual skin (not hair, eyebrows, or background)?
-3. Is this coordinate at the density epicenter of the detected condition?
-4. Are the coordinates normalized relative to the FACE REGION (0.0-1.0 within face bounds)?
-5. Do the coordinates represent the most characteristic point of the condition?
+FINAL OUTPUT REQUIREMENTS:
+- Comprehensive analysis of ALL visible skin areas
+- Coordinates for MOST DISTINCTIVE feature of each condition
+- Treatment plan addressing all significant conditions
+- Clear descriptions of why each coordinate location was selected
+- Body region identification for each detected feature
 
-COORDINATE EXAMPLES:
-- Forehead wrinkle in center-top of face: {"x": 0.5, "y": 0.2}
-- Cheek acne on right side of face: {"x": 0.7, "y": 0.6}
-- Under-eye bags in center: {"x": 0.5, "y": 0.7}
-- All coordinates are relative to the face region (0.0-1.0 within face bounds)
-   - Under-eye area: The skin directly under the eyes
-   
-   AREAS TO COMPLETELY AVOID:
-   - Hair and hairline areas
-   - Eyebrows and eyebrow hair
-   - Any area covered by hair
-   - Scalp areas
-   - Non-skin surfaces
-
-3. COORDINATE MAPPING REQUIREMENTS:
-   - Use normalized coordinates (0.0 to 1.0) relative to the FULL IMAGE dimensions
-   - For each detected condition, provide ONLY the MOST CONFIDENT single point WITHIN THE VALIDATED FACE REGION:
-     * ONE coordinate point representing the most obvious/severe location of the condition
-     * Coordinates must be within the validated face boundaries
-     * Area percentage calculation based on condition presence within the face region
-     * Severity assessment based on visibility within the validated area
-
-4. CONFIDENCE SCORING GUIDELINES (for features within the validated face region):
-   - 0.8-1.0: Very obvious, clearly visible condition within the face area
-   - 0.6-0.79: Moderate evidence, likely present within the face area
-   - 0.4-0.59: Some signs present within the face area, mild condition
-   - 0.2-0.39: Minimal evidence within the face area, questionable
-   - 0.0-0.19: No clear evidence of condition within the validated face region
-
-5. TREATMENT RECOMMENDATIONS:
-   Consider detected features and their locations within the validated face region when providing treatment advice.
-   - Primary detected condition within the face area and its severity
-   - Skin type: ${skinType || 'normal'} (consider this in product recommendations)
-   - Current routine: ${currentProducts?.length ? currentProducts.join(', ') : 'none specified'} (avoid conflicts)
-   - Location-specific treatment recommendations based on coordinate data within the face region
-
-COORDINATE DETECTION INSTRUCTIONS:
-- Carefully examine ONLY the validated face region of the image
-- CRITICAL: Focus EXCLUSIVELY on EXPOSED SKIN areas - completely ignore hair, eyebrows, and hairline
-
-HAIR EXCLUSION RULES (EXTREMELY IMPORTANT):
-- NEVER place coordinates on hair strands, scalp, or hairline areas
-- NEVER place coordinates where hair meets the forehead
-- NEVER place coordinates on areas covered by hair
-- ALWAYS ensure coordinates are on smooth, exposed skin surface
-- For forehead analysis: Stay WELL BELOW the hairline on clear skin
-
-DENSITY-BASED COORDINATE PLACEMENT:
-- For each detected condition, find the AREA with the HIGHEST CONCENTRATION/DENSITY ON CLEAR SKIN ONLY
-- Mark only ONE coordinate point per condition - the CENTER of the most concentrated area on exposed skin
-- For forehead wrinkles: Mark coordinates at the EPICENTER of wrinkle concentration on EXPOSED FOREHEAD SKIN
-  * Analyze the entire exposed forehead skin for wrinkle patterns
-  * Identify where multiple wrinkles converge or are most pronounced
-  * Mark the center point of the highest wrinkle density zone
-  * Avoid any area where hair is visible - focus on skin surface only
-- For acne: Mark coordinates at the CENTER of the most dense acne cluster on clear skin
-- For oily/dry skin: Mark coordinates at the CENTER of the most affected skin zone
-- For pigmentation: Mark coordinates at the CENTER of the most densely pigmented area
-- Be conservative with coordinates - only mark clearly visible features on exposed skin
-- Provide detailed descriptions of what you observe at the marked location on the skin surface
-- Focus on quality over quantity - better to have fewer accurate skin-based points than many uncertain ones
-- COMPLETELY AVOID marking coordinates in hair, eyebrows, or any non-skin areas
-- IGNORE any potential skin conditions outside the validated face region or in hair areas
-
-VERIFICATION CHECKLIST FOR EACH COORDINATE:
-1. Is this coordinate on exposed skin? (NOT hair)
-2. Is this coordinate well below the hairline?
-3. Is this coordinate on a smooth skin surface?
-4. Can I clearly see skin texture at this location?
-5. Is there NO hair visible at this coordinate point?
-
-FINAL 3-STEP VERIFICATION:
-Before providing the final JSON response, verify each coordinate follows the 3-step process:
-
-STEP 1 VERIFICATION - SKIN AREA INCLUSION:
-✓ Confirm coordinate is within verified skin areas from Step 1
-✓ Ensure coordinate is NOT on hair, eyebrows, or excluded areas
-✓ Verify coordinate is on well-lit, clearly visible skin surface
-
-STEP 2 VERIFICATION - FEATURE ANALYSIS:
-✓ Confirm the skin condition was properly identified in the mapped skin areas
-✓ Verify the condition analysis was thorough and systematic
-✓ Ensure condition severity and distribution were properly assessed
-
-STEP 3 VERIFICATION - CHARACTERISTIC POINT:
-✓ Verify coordinate represents the CENTER of HIGHEST DENSITY/CONCENTRATION
-✓ Confirm this is the most characteristic point for the detected feature
-✓ Ensure coordinate represents the best density and highest feature concentration
-✓ For forehead wrinkles: Confirm coordinate is at epicenter of wrinkle concentration on skin
-✓ Provide clear description of why this location has the highest feature density
-
-Return ONLY the JSON object with no additional text, following the exact structure specified with complete coordinate data focused on the validated face region and verified skin-only placement.`;
+Return ONLY the JSON object with no additional text, following the exact structure specified with complete coordinate data for the most distinctive features across all visible skin areas.`;
 
             const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
@@ -1103,8 +1026,8 @@ Return ONLY the JSON object with no additional text, following the exact structu
                         ]
                     }
                 ],
-                max_tokens: 2000,
-                temperature: 0.7,
+                max_tokens: 2500,
+                temperature: 0,
             });
 
             const content = response.choices[0]?.message?.content;
@@ -1112,12 +1035,13 @@ Return ONLY the JSON object with no additional text, following the exact structu
                 throw new Error("No response from OpenAI for comprehensive analysis");
             }
             console.log("content", content);
+            
             // Parse the JSON response
             let analysisResult: any;
             try {
                 // Check if OpenAI refused to analyze the image
                 if (content.toLowerCase().includes("sorry") || content.toLowerCase().includes("can't analyze") || content.toLowerCase().includes("cannot analyze")) {
-                    throw new Error("Image analysis declined - the image may not contain a clear face or may not be suitable for analysis");
+                    throw new Error("Image analysis declined - the image may not contain clear skin areas or may not be suitable for analysis");
                 }
 
                 const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -1131,7 +1055,7 @@ Return ONLY the JSON object with no additional text, following the exact structu
                 
                 // Provide more specific error messages
                 if (content.toLowerCase().includes("sorry") || content.toLowerCase().includes("can't") || content.toLowerCase().includes("cannot")) {
-                    throw new Error("Image analysis was declined - please ensure the image shows a clear, well-lit face");
+                    throw new Error("Image analysis was declined - please ensure the image shows clear, visible skin areas");
                 }
                 
                 throw new Error("Invalid response format from comprehensive analysis AI");
@@ -1146,7 +1070,7 @@ Return ONLY the JSON object with no additional text, following the exact structu
             const formattedResult: CompleteTreatmentPlan = {
                 analysis: {
                     success: true,
-                    message: "Face analysis completed successfully",
+                    message: "Comprehensive skin analysis completed successfully",
                     predictions: analysisResult.skinAnalysis.allConditions,
                     topPrediction: analysisResult.skinAnalysis.topCondition,
                     allPredictions: this.formatConditionsToArray(analysisResult.skinAnalysis.allConditions),
@@ -1185,7 +1109,7 @@ Return ONLY the JSON object with no additional text, following the exact structu
             return {
                 success: true,
                 data: formattedResult,
-                message: "Comprehensive analysis completed successfully"
+                message: "Comprehensive skin analysis completed successfully"
             };
 
         } catch (error) {
