@@ -20,19 +20,7 @@ const PORT = (process.env as any)['PORT'] || 3000;
 
 // Security middleware
 app.use(helmet());
-app.use(cors({
-    origin: [
-        (process.env as any)['CLIENT_URL'] || 'http://localhost:5173',
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://localhost:8080',
-        'https://rapid-gladly-platypus.ngrok-free.app',
-        'https://skinly-ai.com/'
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors());
 
 // Rate limiting
 const limiter = rateLimit({
