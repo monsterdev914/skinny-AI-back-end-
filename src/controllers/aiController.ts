@@ -423,8 +423,12 @@ export class AIController {
                 data: {
                     hasFace: result.hasFace,
                     skinAreaDetected: result.skinAreaDetected,
+                    imageQuality: result.imageQuality,
                     faceRegion: result.faceRegion,
-                    suitable: result.hasFace && result.skinAreaDetected
+                    visibleSkinAreas: result.visibleSkinAreas,
+                    analysisRecommendation: result.analysisRecommendation,
+                    issues: result.issues,
+                    suitable: result.skinAreaDetected && (result.analysisRecommendation === 'proceed' || !result.analysisRecommendation)
                 }
             });
 
@@ -527,7 +531,7 @@ export class AIController {
                         analysisType: 'comprehensive_with_coordinates',
                         aiModel: 'gpt-4o-mini',
                         success: true,
-                        // Store coordinate data as additional metadata (sanitized)
+                        // Store comprehensive skin analysis data with enhanced features
                         detectedFeatures: (result.data?.analysis?.detectedFeatures || []).map((feature: any) => ({
                             condition: feature.condition || 'unknown',
                             confidence: feature.confidence || 0,
@@ -535,7 +539,15 @@ export class AIController {
                             boundingBox: feature.boundingBox || undefined,
                             area: feature.area || undefined,
                             severity: feature.severity || 'mild',
-                            description: feature.description || ''
+                            bodyRegion: feature.bodyRegion || 'etc',
+                            description: feature.description || '',
+                            distinctiveCharacteristics: feature.distinctiveCharacteristics || '',
+                            coordinateVerification: feature.coordinateVerification || {
+                                isOnSkin: true,
+                                isNotOnClothing: true,
+                                isMostDistinctive: true,
+                                skinAreaDescription: ''
+                            }
                         })),
                         imageMetadata: result.data?.analysis?.imageMetadata
                     });
@@ -569,11 +581,12 @@ export class AIController {
         }
     }
 
-    // Get available face conditions
+    // Get available comprehensive skin conditions
     static async getAvailableConditions(_req: Request, res: Response) {
         try {
-            // Face conditions that OpenAI Vision can detect
+            // Comprehensive skin conditions that the AI can detect
             const conditions = [
+                // Facial conditions
                 'hormonal_acne',
                 'forehead_wrinkles',
                 'oily_skin',
@@ -581,14 +594,26 @@ export class AIController {
                 'normal_skin',
                 'dark_spots',
                 'under_eye_bags',
-                'rosacea'
+                'rosacea',
+                // Body conditions
+                'eczema',
+                'psoriasis',
+                'keratosis_pilaris',
+                'stretch_marks',
+                'scars',
+                'moles',
+                'sun_damage',
+                'age_spots',
+                'seborrheic_keratosis'
             ];
 
             return res.json({
                 success: true,
                 data: {
                     conditions,
-                    total: conditions.length
+                    total: conditions.length,
+                    facialConditions: conditions.slice(0, 8),
+                    bodyConditions: conditions.slice(8)
                 }
             });
         } catch (error) {

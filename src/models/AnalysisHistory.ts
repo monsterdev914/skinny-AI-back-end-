@@ -7,8 +7,9 @@ interface BaseDocument extends Document {
     updatedAt: Date;
 }
 
-// Face condition predictions interface
-interface IFaceConditionPredictions {
+// Comprehensive skin condition predictions interface (expanded from face-only)
+interface ISkinConditionPredictions {
+    // Facial conditions
     hormonal_acne?: number;
     forehead_wrinkles?: number;
     oily_skin?: number;
@@ -17,6 +18,16 @@ interface IFaceConditionPredictions {
     dark_spots?: number;
     under_eye_bags?: number;
     rosacea?: number;
+    // Body conditions
+    eczema?: number;
+    psoriasis?: number;
+    keratosis_pilaris?: number;
+    stretch_marks?: number;
+    scars?: number;
+    moles?: number;
+    sun_damage?: number;
+    age_spots?: number;
+    seborrheic_keratosis?: number;
 }
 
 // Treatment step interface
@@ -81,6 +92,7 @@ interface IBoundingBox {
     height: number;
 }
 
+// Enhanced detected feature interface for comprehensive skin analysis
 interface IDetectedFeature {
     condition: string;
     confidence: number;
@@ -88,13 +100,28 @@ interface IDetectedFeature {
     boundingBox?: IBoundingBox;
     area?: number; // percentage of affected area
     severity?: 'mild' | 'moderate' | 'severe';
+    bodyRegion?: 'face' | 'arm' | 'hand' | 'leg' | 'torso' | 'neck' | 'etc';
     description?: string;
+    distinctiveCharacteristics?: string;
+    coordinateVerification?: {
+        isOnSkin: boolean;
+        isNotOnClothing: boolean;
+        isMostDistinctive: boolean;
+        skinAreaDescription: string;
+    };
 }
 
+// Enhanced image metadata interface for comprehensive skin analysis
 interface IImageMetadata {
     width: number;
     height: number;
     format: string;
+    aspectRatio?: number;
+    skinCoverage?: {
+        totalSkinAreaPercentage: number;
+        visibleSkinRegions: string[];
+        description: string;
+    };
     analyzedRegion?: {
         x: number;
         y: number;
@@ -113,15 +140,15 @@ export interface IAnalysisHistory extends BaseDocument {
     imageSize?: number;
     imageType?: string;
     imagePath?: string; // Relative path to saved image file
-    imageMetadata?: IImageMetadata; // Image dimensions and format
+    imageMetadata?: IImageMetadata; // Enhanced image dimensions and skin coverage info
     
-    // Analysis results
-    predictions: IFaceConditionPredictions;
+    // Analysis results - now supports comprehensive skin conditions
+    predictions: ISkinConditionPredictions;
     topPrediction: {
         condition: string;
         confidence: number;
     };
-    detectedFeatures?: IDetectedFeature[]; // Spatial feature detection with coordinates
+    detectedFeatures?: IDetectedFeature[]; // Enhanced spatial feature detection with body regions
     
     // Treatment data
     treatmentRecommendation?: ITreatmentRecommendation;
@@ -174,6 +201,12 @@ const AnalysisHistorySchema: Schema = new Schema({
         width: { type: Number, required: false },
         height: { type: Number, required: false },
         format: { type: String, required: false },
+        aspectRatio: { type: Number, required: false },
+        skinCoverage: {
+            totalSkinAreaPercentage: { type: Number, required: false },
+            visibleSkinRegions: [{ type: String, required: false }],
+            description: { type: String, required: false }
+        },
         analyzedRegion: {
             x: { type: Number, required: false, min: 0, max: 1 },
             y: { type: Number, required: false, min: 0, max: 1 },
@@ -183,8 +216,9 @@ const AnalysisHistorySchema: Schema = new Schema({
         }
     },
     
-    // Analysis results
+    // Analysis results - comprehensive skin conditions
     predictions: {
+        // Facial conditions
         hormonal_acne: { type: Number, min: 0, max: 1 },
         forehead_wrinkles: { type: Number, min: 0, max: 1 },
         oily_skin: { type: Number, min: 0, max: 1 },
@@ -192,7 +226,17 @@ const AnalysisHistorySchema: Schema = new Schema({
         normal_skin: { type: Number, min: 0, max: 1 },
         dark_spots: { type: Number, min: 0, max: 1 },
         under_eye_bags: { type: Number, min: 0, max: 1 },
-        rosacea: { type: Number, min: 0, max: 1 }
+        rosacea: { type: Number, min: 0, max: 1 },
+        // Body conditions
+        eczema: { type: Number, min: 0, max: 1 },
+        psoriasis: { type: Number, min: 0, max: 1 },
+        keratosis_pilaris: { type: Number, min: 0, max: 1 },
+        stretch_marks: { type: Number, min: 0, max: 1 },
+        scars: { type: Number, min: 0, max: 1 },
+        moles: { type: Number, min: 0, max: 1 },
+        sun_damage: { type: Number, min: 0, max: 1 },
+        age_spots: { type: Number, min: 0, max: 1 },
+        seborrheic_keratosis: { type: Number, min: 0, max: 1 }
     },
     
     topPrediction: {
@@ -224,7 +268,15 @@ const AnalysisHistorySchema: Schema = new Schema({
         },
         area: { type: Number, min: 0, max: 100 },
         severity: { type: String, enum: ['mild', 'moderate', 'severe'] },
-        description: { type: String }
+        bodyRegion: { type: String, enum: ['face', 'arm', 'hand', 'leg', 'torso', 'neck', 'etc'] },
+        description: { type: String },
+        distinctiveCharacteristics: { type: String },
+        coordinateVerification: {
+            isOnSkin: { type: Boolean, required: false },
+            isNotOnClothing: { type: Boolean, required: false },
+            isMostDistinctive: { type: Boolean, required: false },
+            skinAreaDescription: { type: String, required: false }
+        }
     }],
     
     // Treatment recommendation

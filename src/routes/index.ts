@@ -8,6 +8,8 @@ import subscriptionRouter from './subscriptions';
 import paymentMethodRouter from './paymentMethods';
 import aiRouter from './ai';
 import analysisHistoryRouter from './analysisHistory';
+import settingsRouter from './settings';
+import notificationsRouter from './notifications';
 
 // Router
 const router = Router();
@@ -19,5 +21,7 @@ router.use('/subscriptions', subscriptionRouter);
 router.use('/payment-methods', paymentMethodRouter);
 router.use('/ai', aiRouter);
 router.use('/history', analysisHistoryRouter);
+router.use('/settings', settingsRouter);
+router.use('/notifications', notificationsRouter);
 
 export default router;

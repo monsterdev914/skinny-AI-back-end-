@@ -11,6 +11,7 @@ export interface BoundingBox {
     height: number;
 }
 
+// Enhanced detected feature interface for comprehensive skin analysis
 export interface DetectedFeature {
     condition: string;
     confidence: number;
@@ -18,28 +19,62 @@ export interface DetectedFeature {
     boundingBox?: BoundingBox;
     area?: number; // percentage of affected area
     severity?: 'mild' | 'moderate' | 'severe';
+    bodyRegion?: 'face' | 'arm' | 'hand' | 'leg' | 'torso' | 'neck' | 'etc';
     description?: string;
+    distinctiveCharacteristics?: string;
+    coordinateVerification?: {
+        isOnSkin: boolean;
+        isNotOnClothing: boolean;
+        isMostDistinctive: boolean;
+        skinAreaDescription: string;
+    };
 }
 
-export interface FaceConditionPrediction {
+// Comprehensive skin condition prediction interface (expanded from face-only)
+export interface SkinConditionPrediction {
     [condition: string]: number; // condition name -> confidence score
 }
 
-export interface FaceAnalysisResult {
+// Keep legacy interface for backward compatibility
+export interface FaceConditionPrediction extends SkinConditionPrediction {}
+
+// Enhanced image metadata for comprehensive skin analysis
+export interface ImageMetadata {
+    width: number;
+    height: number;
+    format: string;
+    aspectRatio?: number;
+    skinCoverage?: {
+        totalSkinAreaPercentage: number;
+        visibleSkinRegions: string[];
+        description: string;
+    };
+    analyzedRegion?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        description: string;
+    };
+}
+
+// Enhanced analysis result interface for comprehensive skin analysis
+export interface SkinAnalysisResult {
     success: boolean;
-    predictions: FaceConditionPrediction;
+    predictions: SkinConditionPrediction;
     topPrediction: {
         condition: string;
         confidence: number;
     };
     allPredictions?: FormattedPrediction[];
-    detectedFeatures?: DetectedFeature[]; // New: spatial feature detection
-    imageMetadata?: {
-        width: number;
-        height: number;
-        format: string;
-    };
+    detectedFeatures?: DetectedFeature[]; // Enhanced spatial feature detection with body regions
+    imageMetadata?: ImageMetadata; // Enhanced image metadata with skin coverage
     message: string;
+}
+
+// Legacy face analysis result interface (for backward compatibility)
+export interface FaceAnalysisResult extends SkinAnalysisResult {
+    predictions: FaceConditionPrediction;
 }
 
 export interface FaceAnalysisRequest {
@@ -107,9 +142,9 @@ export interface AgeDetectionResult {
     message: string;
 }
 
-// Combined treatment response
+// Enhanced complete treatment plan for comprehensive skin analysis
 export interface CompleteTreatmentPlan {
-    analysis: FaceAnalysisResult;
+    analysis: SkinAnalysisResult; // Updated to use comprehensive skin analysis
     treatment: {
         success: boolean;
         message: string;
