@@ -27,7 +27,7 @@ app.use(cors({
         'http://localhost:5173',
         'http://localhost:8080',
         'https://rapid-gladly-platypus.ngrok-free.app',
-        'https://api.skinly.com'
+        'https://api.skinly-ai.com'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
