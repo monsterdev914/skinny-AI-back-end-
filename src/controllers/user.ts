@@ -4,7 +4,6 @@ import { getRelativePath, getFileUrl, deleteFile } from '../middleware/fileUploa
 import { User } from '../models/User';
 import { Subscription } from '../models/Subscription';
 import AnalysisHistory from '../models/AnalysisHistory';
-import fs from 'fs';
 import path from 'path';
 
 export class UserController {

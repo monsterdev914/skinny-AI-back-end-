@@ -98,12 +98,11 @@ export class SettingsController {
             const userId = req.user?.id;
             
             // Gather all user data
-            const [user, settings, analysisHistory, subscription, paymentMethods] = await Promise.all([
+            const [user, settings, analysisHistory, subscription] = await Promise.all([
                 User.findById(userId).select('-passwordHash'),
                 UserSettings.findOne({ userId }),
                 AnalysisHistory.find({ userId }).sort({ createdAt: -1 }),
-                Subscription.findOne({ userId }).populate('planId'),
-                PaymentMethod.find({ userId })
+                Subscription.findOne({ userId }).populate('planId')
             ]);
 
             // Helper function to escape CSV values

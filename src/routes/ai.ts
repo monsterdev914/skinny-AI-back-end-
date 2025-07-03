@@ -12,6 +12,9 @@ router.post('/detect-age', uploadAnalysisImage.single('image'), asyncHandler(AIC
 // Face analysis endpoints
 router.post('/analyze-face', uploadAnalysisImage.single('image'), asyncHandler(AIController.analyzeFaceCondition));
 
+// Professional skin analysis using Skin Analyze Pro API with precise location overlays
+router.post('/professional-analysis', authenticateToken, uploadAnalysisImage.single('image'), asyncHandler(AIController.professionalSkinAnalysis));
+
 // Skin area validation endpoint (no auth required)
 router.post('/validate-skin', uploadTempImage.single('image'), asyncHandler(AIController.validateSkinArea));
 
@@ -26,7 +29,7 @@ router.post('/treatment/recommendation', asyncHandler(AIController.getTreatmentR
 router.get('/treatment/timeline', asyncHandler(AIController.getTreatmentTimeline));
 
 // Health and info endpoints
-router.get('/health', asyncHandler(AIController.getServiceHealth));
+router.get('/health', asyncHandler(AIController.healthCheck));
 router.get('/conditions', asyncHandler(AIController.getAvailableConditions));
 
 export default router; 

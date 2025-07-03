@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import { FaceAnalysisService } from '../services/ai/faceAnalysisService';
+import { SkinAnalyzeProService } from '../services/ai/skinAnalyzeProService';
 import AnalysisHistory from '../models/AnalysisHistory';
-import { getRelativePath, getFileUrl, deleteFile } from '../middleware/fileUpload';
+import { getRelativePath, deleteFile } from '../middleware/fileUpload';
 import fs from 'fs';
+import sharp from 'sharp';
 
 export class AIController {
     // Detect age from uploaded image
@@ -620,6 +622,233 @@ export class AIController {
             return res.status(500).json({
                 success: false,
                 message: 'Failed to get available conditions'
+            });
+        }
+    }
+
+    // Professional skin analysis using Skin Analyze Pro API with accurate location overlays
+    static async professionalSkinAnalysis(req: Request, res: Response) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'No image file provided'
+                });
+            }
+
+            console.log('Starting professional skin analysis with Skin Analyze Pro API:', req.file.filename);
+
+            // Save file properties before cleanup
+            const fileProperties = {
+                originalname: req.file.originalname,
+                size: req.file.size,
+                mimetype: req.file.mimetype,
+                path: req.file.path
+            };
+
+            // Get image dimensions
+            const imageBuffer = fs.readFileSync(req.file.path);
+            const imageMetadata = await sharp(imageBuffer).metadata();
+
+            // Parse optional user details
+            const userAge = req.body.userAge ? parseInt(req.body.userAge) : undefined;
+            const skinType = req.body.skinType || undefined;
+            const currentProducts = req.body.currentProducts ? 
+                (Array.isArray(req.body.currentProducts) ? req.body.currentProducts : [req.body.currentProducts]) : 
+                undefined;
+
+            console.log('User details:', { userAge, skinType, currentProducts });
+
+            // Step 1: Professional Skin Analysis using Skin Analyze Pro API
+            console.log('Step 1: Calling Skin Analyze Pro API for detailed skin analysis...');
+            const skinAnalysisResult = await SkinAnalyzeProService.analyzeSkin(imageBuffer);
+
+            if (!skinAnalysisResult.success) {
+                console.error('Professional skin analysis failed, but keeping uploaded file for debugging');
+                return res.status(500).json({
+                    success: false,
+                    message: skinAnalysisResult.message,
+                    error: skinAnalysisResult.error
+                });
+            }
+
+            // Step 2: Convert to detected features with accurate locations
+            const detectedFeatures = SkinAnalyzeProService.convertToDetectedFeatures(skinAnalysisResult);
+            const professionalImageMetadata = SkinAnalyzeProService.convertToImageMetadata(
+                skinAnalysisResult, 
+                imageMetadata.width || 1024, 
+                imageMetadata.height || 1024
+            );
+
+            console.log(`Step 2 Complete: Detected ${detectedFeatures.length} skin conditions with precise locations`);
+
+            // Step 3: Generate comprehensive treatment plan using OpenAI (single prompt)
+            const primaryCondition = detectedFeatures.length > 0 ? 
+                detectedFeatures.reduce((prev, current) => 
+                    (prev.confidence > current.confidence) ? prev : current
+                ) : 
+                { condition: 'normal_skin', confidence: 0.8 };
+
+            console.log('Step 3: Generating comprehensive treatment plan with single OpenAI call...');
+
+            // Single OpenAI call for both treatment recommendation and timeline (already optimized)
+            const treatmentPlan = await FaceAnalysisService.generateTreatmentRecommendation(
+                primaryCondition.condition,
+                primaryCondition.confidence,
+                userAge || skinAnalysisResult.data?.skin_age,
+                skinType,
+                currentProducts
+            );
+
+            // Step 4: Save to analysis history
+            console.log('Step 4: Saving professional analysis to history...');
+            
+            // Get relative path for proper URL construction
+            const relativePath = getRelativePath(req.file.path);
+            console.log('Storing relative path:', relativePath);
+            
+            const analysisHistory = new AnalysisHistory({
+                userId: (req as any).user?.id,
+                predictions: detectedFeatures.reduce((acc: any, feature) => {
+                    acc[feature.condition] = feature.confidence;
+                    return acc;
+                }, {}),
+                topPrediction: {
+                    condition: primaryCondition.condition,
+                    confidence: primaryCondition.confidence
+                },
+                detectedFeatures,
+                imageMetadata: professionalImageMetadata,
+                treatmentRecommendation: (treatmentPlan.data as any)?.recommendation,
+                treatmentTimeline: (treatmentPlan.data as any)?.timeline,
+                personalizedNotes: [
+                    `Professional skin analysis using Skin Analyze Pro API completed`,
+                    `Detected ${detectedFeatures.length} skin conditions with precise location mapping`,
+                    `Primary condition: ${primaryCondition.condition}`,
+                    `Professional confidence: ${Math.round(primaryCondition.confidence * 100)}%`,
+                    `Skin quality score: ${Math.round((skinAnalysisResult.data?.overall_skin_quality_score || 0) * 100)}%`,
+                    `Skin age analysis: ${skinAnalysisResult.data?.skin_age || 'Not determined'} years`,
+                    `Skin type: ${skinAnalysisResult.data?.skin_type.type || 'Not determined'}`
+                ],
+                analysisType: 'professional_skin_analyze_pro',
+                aiModel: 'Skin Analyze Pro API',
+                userAge,
+                skinType,
+                currentProducts,
+                originalImageName: fileProperties.originalname,
+                imageSize: fileProperties.size,
+                imageType: fileProperties.mimetype,
+                imagePath: relativePath,
+                success: true
+            });
+
+            await analysisHistory.save();
+            console.log('Professional analysis saved with ID:', analysisHistory._id);
+
+            // Keep the uploaded file in permanent location for future viewing
+            console.log('Image saved permanently at:', relativePath);
+
+            // Step 4: Return comprehensive results with professional metrics
+            return res.json({
+                success: true,
+                message: 'Professional skin analysis completed successfully with precise location mapping',
+                data: {
+                    analysis: {
+                        topPrediction: {
+                            condition: primaryCondition.condition,
+                            confidence: primaryCondition.confidence
+                        },
+                        allPredictions: detectedFeatures.map(feature => ({
+                            condition: feature.condition,
+                            confidence: feature.confidence,
+                            percentage: `${Math.round(feature.confidence * 100)}%`,
+                            bodyRegion: feature.bodyRegion,
+                            severity: feature.severity
+                        })).sort((a, b) => b.confidence - a.confidence),
+                        rawPredictions: detectedFeatures.reduce((acc: any, feature) => {
+                            acc[feature.condition] = feature.confidence;
+                            return acc;
+                        }, {}),
+                        detectedFeatures, // This contains precise bounding boxes for overlays
+                        imageMetadata: professionalImageMetadata,
+                        professionalMetrics: {
+                            skinTone: skinAnalysisResult.data?.skin_tone_classification,
+                            skinUndertone: skinAnalysisResult.data?.skin_undertone_classification,
+                            skinType: skinAnalysisResult.data?.skin_type.type,
+                            skinAge: skinAnalysisResult.data?.skin_age,
+                            pigmentationLevel: skinAnalysisResult.data?.pigmentation_level,
+                            overallScore: Math.round((skinAnalysisResult.data?.overall_skin_quality_score || 0) * 100),
+                            qualityScore: Math.round((skinAnalysisResult.data?.overall_skin_quality_score || 0) * 100),
+                            qualityBreakdown: {
+                                acnePresent: skinAnalysisResult.data?.acne_analysis.present,
+                                blackheadsPresent: skinAnalysisResult.data?.blackheads.present,
+                                blackheadsSeverity: skinAnalysisResult.data?.blackheads.severity,
+                                blackheadsQuantity: skinAnalysisResult.data?.blackheads.quantity,
+                                darkCirclesPresent: skinAnalysisResult.data?.dark_circles.present,
+                                eyeBagsPresent: skinAnalysisResult.data?.eye_bags.present,
+                                foreheadWrinklesPresent: skinAnalysisResult.data?.wrinkles.forehead.present,
+                                enlargedPoresPresent: Object.values(skinAnalysisResult.data?.pores || {}).some((pore: any) => pore.present)
+                            }
+                        }
+                    },
+                    treatment: (treatmentPlan.data as any)?.recommendation,
+                    timeline: (treatmentPlan.data as any)?.timeline,
+                    ageDetection: {
+                        estimatedAge: skinAnalysisResult.data?.skin_age || 25,
+                        confidence: 0.9,
+                        confidencePercentage: 90,
+                        skinAgeAnalysis: skinAnalysisResult.data?.skin_age
+                    },
+                    apiProvider: 'Skin Analyze Pro API',
+                    analysisMethod: 'Professional-grade skin analysis with precise location mapping'
+                }
+            });
+
+        } catch (error) {
+            console.error('Professional skin analysis error:', error);
+            console.log('Keeping uploaded file for debugging purposes at:', req.file?.path);
+            
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to perform professional skin analysis',
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    // Enhanced health check for all AI services
+    static async healthCheck(_req: Request, res: Response) {
+        try {
+            const checks = await Promise.all([
+                FaceAnalysisService.healthCheck(),
+                SkinAnalyzeProService.healthCheck()
+            ]);
+
+            const [openAIHealthy, skinAnalyzeProHealthy] = checks;
+
+            res.json({
+                success: true,
+                services: {
+                    openai: {
+                        status: openAIHealthy ? 'healthy' : 'unhealthy',
+                        name: 'OpenAI GPT-4 Vision',
+                        description: 'Treatment recommendations and age detection'
+                    },
+                    skinAnalyzePro: {
+                        status: skinAnalyzeProHealthy ? 'healthy' : 'unhealthy',
+                        name: 'Skin Analyze Pro API',
+                        description: 'Professional skin condition detection with precise locations'
+                    }
+                },
+                overall: openAIHealthy && skinAnalyzeProHealthy ? 'healthy' : 'degraded',
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Health check failed',
+                error: error instanceof Error ? error.message : 'Unknown error'
             });
         }
     }
