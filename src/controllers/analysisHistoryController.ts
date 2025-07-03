@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import AnalysisHistory, { IAnalysisHistory } from '../models/AnalysisHistory';
+import AnalysisHistory from '../models/AnalysisHistory';
 import mongoose from 'mongoose';
 
 export class AnalysisHistoryController {
@@ -168,14 +168,14 @@ export class AnalysisHistoryController {
                 imageUrl: analysis.imagePath ? `/uploads/${analysis.imagePath}` : null
             };
 
-            res.json({
+            return res.json({
                 success: true,
                 data: analysisWithUrl
             });
 
         } catch (error) {
             console.error('Error fetching analysis:', error);
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: 'Failed to fetch analysis'
             });
@@ -307,7 +307,7 @@ export class AnalysisHistoryController {
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 message: 'Notes updated successfully',
                 data: analysis
@@ -315,7 +315,7 @@ export class AnalysisHistoryController {
 
         } catch (error) {
             console.error('Error updating notes:', error);
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: 'Failed to update notes'
             });
@@ -340,14 +340,14 @@ export class AnalysisHistoryController {
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 message: 'Analysis deleted successfully'
             });
 
         } catch (error) {
             console.error('Error deleting analysis:', error);
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: 'Failed to delete analysis'
             });
@@ -451,10 +451,9 @@ export class AnalysisHistoryController {
             // Format weekly data
             console.log('Raw weekly data:', weeklyData);
             
-            const weeklyAnalyses = weeklyData.reverse().map((week, index) => {
+            const weeklyAnalyses = weeklyData.reverse().map((week, _index) => {
                 const weekDate = new Date(week._id);
                 const now = new Date();
-                const weekStart = new Date(weekDate);
                 const weekEnd = new Date(weekDate);
                 weekEnd.setDate(weekEnd.getDate() + 6);
                 

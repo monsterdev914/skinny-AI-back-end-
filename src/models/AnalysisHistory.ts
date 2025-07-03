@@ -62,7 +62,7 @@ interface IMaintenancePhase {
 // Treatment recommendation interface
 interface ITreatmentRecommendation {
     condition: string;
-    severity: 'mild' | 'moderate' | 'severe';
+    severity: 'mild' | 'moderate' | 'severe' | 'normal';
     overview: string;
     steps: ITreatmentStep[];
     expectedResults: string;
@@ -99,8 +99,8 @@ interface IDetectedFeature {
     coordinates?: ICoordinate[];
     boundingBox?: IBoundingBox;
     area?: number; // percentage of affected area
-    severity?: 'mild' | 'moderate' | 'severe';
-    bodyRegion?: 'face' | 'arm' | 'hand' | 'leg' | 'torso' | 'neck' | 'etc';
+    severity?: 'mild' | 'moderate' | 'severe' | 'normal';
+    bodyRegion?: 'face' | 'arm' | 'hand' | 'leg' | 'torso' | 'neck' | 'etc' | 'eyes';
     description?: string;
     distinctiveCharacteristics?: string;
     coordinateVerification?: {
@@ -161,7 +161,7 @@ export interface IAnalysisHistory extends BaseDocument {
     currentProducts?: string[];
     
     // Analysis metadata
-    analysisType: 'face_analysis' | 'comprehensive_analysis' | 'comprehensive_with_coordinates';
+    analysisType: 'face_analysis' | 'comprehensive_analysis' | 'comprehensive_with_coordinates' | 'professional_skin_analyze_pro';
     aiModel: string; // e.g., 'gpt-4o'
     success: boolean;
     errorMessage?: string;
@@ -267,8 +267,8 @@ const AnalysisHistorySchema: Schema = new Schema({
             height: { type: Number, required: false, min: 0, max: 1 }
         },
         area: { type: Number, min: 0, max: 100 },
-        severity: { type: String, enum: ['mild', 'moderate', 'severe'] },
-        bodyRegion: { type: String, enum: ['face', 'arm', 'hand', 'leg', 'torso', 'neck', 'etc'] },
+        severity: { type: String, enum: ['mild', 'moderate', 'severe', 'normal'] },
+        bodyRegion: { type: String, enum: ['face', 'arm', 'hand', 'leg', 'torso', 'neck', 'etc', 'eyes'] },
         description: { type: String },
         distinctiveCharacteristics: { type: String },
         coordinateVerification: {
@@ -284,7 +284,7 @@ const AnalysisHistorySchema: Schema = new Schema({
         condition: String,
         severity: {
             type: String,
-            enum: ['mild', 'moderate', 'severe']
+            enum: ['mild', 'moderate', 'severe', 'normal']
         },
         overview: String,
         steps: [{
@@ -339,7 +339,7 @@ const AnalysisHistorySchema: Schema = new Schema({
     // Analysis metadata
     analysisType: {
         type: String,
-        enum: ['face_analysis', 'comprehensive_analysis', 'comprehensive_with_coordinates'],
+        enum: ['face_analysis', 'comprehensive_analysis', 'comprehensive_with_coordinates', 'professional_skin_analyze_pro'],
         required: true
     },
     aiModel: {
