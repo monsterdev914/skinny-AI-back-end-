@@ -102,9 +102,6 @@ export class SubscriptionController {
             const userId = req.user?.id;
             const { planId, paymentMethodId } = req.body;
             
-            // Determine billing cycle based on plan
-            let billingCycle: 'monthly' | 'yearly' | 'one-time' = 'one-time';
-            
             // Check if user already has an active subscription
             const existingSubscription = await Subscription.findOne({
                 userId,
@@ -127,19 +124,11 @@ export class SubscriptionController {
                 });
             }
             
-            // Determine billing cycle based on plan
-            if (plan.name === 'Premium') {
-                billingCycle = 'monthly';
-            } else if (plan.name === 'Pro') {
-                billingCycle = 'yearly';
-            } else {
-                billingCycle = 'one-time'; // Free plan
-            }
+            
             
             const { subscription, dbSubscription } = await stripeService.createSubscription(
                 req.user!,
                 planId,
-                billingCycle,
                 paymentMethodId
             );
             
@@ -277,7 +266,7 @@ export class SubscriptionController {
 
             const userId = req.user?.id;
             const { subscriptionId } = req.params;
-            const { planId, billingCycle } = req.body;
+            const { planId } = req.body;
             
             // Verify subscription belongs to user
             const subscription = await Subscription.findOne({
@@ -328,8 +317,7 @@ export class SubscriptionController {
                     fromPlanId: oldPlanId?.toString(),
                     toPlanId: planId,
                     fromAmount: oldPlan?.price,
-                    toAmount: plan.price,
-                    billingCycle: billingCycle
+                    toAmount: plan.price
                 }
             });
             
@@ -352,7 +340,7 @@ export class SubscriptionController {
         try {
             const userId = req.user?.id;
             const { subscriptionId } = req.params;
-            const { cancelAtPeriodEnd: _cancelAtPeriodEnd = true } = req.body;
+            const { cancelAtPeriodEnd = true } = req.body;
             
             // Verify subscription belongs to user
             const subscription = await Subscription.findOne({
@@ -437,7 +425,7 @@ export class SubscriptionController {
         try {
             const userId = req.user?.id;
             const { subscriptionId } = req.params;
-            const { planId, billingCycle } = req.query;
+            const { planId } = req.query;
             
             // Verify subscription belongs to user
             const subscription = await Subscription.findOne({
@@ -453,10 +441,10 @@ export class SubscriptionController {
                 });
             }
             
-            if (!planId || !billingCycle) {
+            if (!planId) {
                 return res.status(400).json({
                     success: false,
-                    message: 'planId and billingCycle are required'
+                    message: 'planId is required'
                 });
             }
             
@@ -543,7 +531,4 @@ export const updateSubscriptionValidation = [
     body('planId')
         .isMongoId()
         .withMessage('Valid plan ID is required'),
-    body('billingCycle')
-        .isIn(['monthly', 'yearly'])
-        .withMessage('Billing cycle must be monthly or yearly')
 ]; 
