@@ -37,12 +37,7 @@ const planSchema = new Schema<PlanDocument>({
         trim: true,
         maxlength: 500
     },
-    priceMonthly: {
-        type: Number,
-        min: 0,
-        default: 0
-    },
-    priceYearly: {
+    price: {
         type: Number,
         min: 0,
         default: 0
@@ -51,11 +46,7 @@ const planSchema = new Schema<PlanDocument>({
         type: String,
         trim: true
     },
-    stripeMonthlyPriceId: {
-        type: String,
-        trim: true
-    },
-    stripeYearlyPriceId: {
+    stripePriceId: {
         type: String,
         trim: true
     },

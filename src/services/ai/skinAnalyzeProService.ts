@@ -166,13 +166,19 @@ interface SkinAnalyzeProResult {
 }
 
 export class SkinAnalyzeProService {
-    private static readonly API_KEY = process.env['AILABAPI_KEY'] || "qTNYH96FTECenV0IPuMaxROyzo0cuLSQ818rBl4SHabUtkAdviAigwvGjDI7ZD63";
-    private static readonly API_URL = process.env['AILABAPI_URL'] || "https://www.ailabapi.com/api/portrait/analysis/skin-analysis-advanced";
+    // Get API configuration at runtime
+    private static getApiConfig() {
+        return {
+            API_KEY: (process.env as any)['RAPIDAPI_KEY'] || "",
+            API_URL: (process.env as any)['RAPID_URL'] || "https://www.ailabapi.com/api/portrait/analysis/skin-analysis-pro"
+        };
+    }
 
     // Validate API configuration
     private static validateConfig(): void {
-        if (!this.API_KEY) {
-            throw new Error('AILABAPI_KEY environment variable is required');
+        const config = this.getApiConfig();
+        if (!config.API_KEY) {
+            throw new Error('RAPIDAPI_KEY environment variable is required');
         }
     }
 
@@ -198,12 +204,14 @@ export class SkinAnalyzeProService {
             });
 
             // Make API request to AILab
+            console.log(this.getApiConfig());
+            const config = this.getApiConfig();
             const response = await axios.post(
-                this.API_URL,
+                config.API_URL,
                 formData,
                 {
                     headers: {
-                        'ailabapi-api-key': this.API_KEY,
+                        'ailabapi-api-key': config.API_KEY,
                         ...formData.getHeaders()
                     },
                     timeout: 60000 // 60 second timeout for detailed analysis

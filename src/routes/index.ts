@@ -10,6 +10,7 @@ import aiRouter from './ai';
 import analysisHistoryRouter from './analysisHistory';
 import settingsRouter from './settings';
 import notificationsRouter from './notifications';
+import webhookRouter from './webhooks';
 
 // Router
 const router = Router();
@@ -23,5 +24,6 @@ router.use('/ai', aiRouter);
 router.use('/history', analysisHistoryRouter);
 router.use('/settings', settingsRouter);
 router.use('/notifications', notificationsRouter);
+router.use('/webhooks', webhookRouter);
 
 export default router;
