@@ -41,11 +41,9 @@ export interface IUser extends BaseDocument {
 export interface IPlan extends BaseDocument {
     name: string;
     description?: string;
-    priceMonthly?: number;
-    priceYearly?: number;
+    price?: number;
     stripeProductId?: string;
-    stripeMonthlyPriceId?: string;
-    stripeYearlyPriceId?: string;
+    stripePriceId?: string;
     features: Array<{
         name: string;
         included: boolean;
@@ -118,6 +116,32 @@ export interface IInvoice extends BaseDocument {
     dueDate?: Date;
     paid: boolean;
     paymentIntentId?: string;
+}
+
+// Subscription Log related types
+export interface ISubscriptionLog extends BaseDocument {
+    userId: Types.ObjectId;
+    subscriptionId: Types.ObjectId;
+    action: 'created' | 'upgraded' | 'downgraded' | 'cancelled' | 'reactivated' | 'payment_succeeded' | 'payment_failed' | 'trial_started' | 'trial_ended';
+    details: {
+        planId?: string;
+        fromPlanId?: string;
+        toPlanId?: string;
+        billingCycle?: 'monthly' | 'yearly';
+        fromBillingCycle?: 'monthly' | 'yearly';
+        toBillingCycle?: 'monthly' | 'yearly';
+        amount?: number;
+        fromAmount?: number;
+        toAmount?: number;
+        trialDays?: number;
+        cancelAtPeriodEnd?: boolean;
+        canceledAt?: Date;
+        reactivatedAt?: Date;
+        paymentIntentId?: string;
+        invoiceId?: string;
+        errorMessage?: string;
+        metadata?: Record<string, any>;
+    };
 }
 
 // JWT Payload interface

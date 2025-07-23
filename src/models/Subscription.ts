@@ -48,7 +48,7 @@ const subscriptionSchema = new Schema<SubscriptionDocument>({
     },
     billingCycle: {
         type: String,
-        enum: ['monthly', 'yearly'],
+        enum: ['monthly', 'yearly', 'one-time'],
         required: true
     },
     paymentMethodId: {
